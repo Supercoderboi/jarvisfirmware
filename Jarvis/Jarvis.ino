@@ -66,12 +66,12 @@ int registeredTaps = 0;
 bool longPress = false;       
 const unsigned long TAP_TIMEOUT = 350; 
 
-// Menu Variables (Added System Update)
+// Menu Variables
 const char* menuItems[] = {"Jarvis", "Sensors", "Timer", "Music", "System Update"};
 const int numMenuItems = 5;
 int menuIndex = 0;
 
-// Jarvis Variables (Added '<' for Backspace)
+// Jarvis Variables
 const char charset[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?<";
 int charIndex = 0;
 String jarvisMessage = "";
@@ -121,7 +121,6 @@ void IRAM_ATTR readEncoder() {
 // SETUP
 // ==========================================
 void setup() {
-  // DISABLE BROWNOUT PANIC (Protects against 38W chargers causing restart loops)
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); 
   
   Serial.begin(115200);
@@ -232,14 +231,28 @@ void runHome() {
   struct tm timeinfo;
   if (getLocalTime(&timeinfo)) {
     char timeStr[10]; 
+    char dayStr[15];
     char dateStr[15];
     
     strftime(timeStr, sizeof(timeStr), "%I:%M %p", &timeinfo);
+    strftime(dayStr, sizeof(dayStr), "%A", &timeinfo); 
     strftime(dateStr, sizeof(dateStr), "%d %b %Y", &timeinfo);
     
-    display.setCursor(12, 10);
+    int timeX = (84 - (strlen(timeStr) * 6)) / 2;
+    int dayX = (84 - (strlen(dayStr) * 6)) / 2;
+    int dateX = (84 - (strlen(dateStr) * 6)) / 2;
+
+    if (timeX < 0) timeX = 0;
+    if (dayX < 0) dayX = 0;
+    if (dateX < 0) dateX = 0;
+
+    display.setCursor(timeX, 5);
     display.print(timeStr);
-    display.setCursor(10, 25);
+    
+    display.setCursor(dayX, 18);
+    display.print(dayStr);
+    
+    display.setCursor(dateX, 31);
     display.print(dateStr);
   }
   display.display();
@@ -267,7 +280,6 @@ void runMenu() {
     if (i == menuIndex) display.print(">");
     else display.print(" ");
     
-    // Scrolling logic for long menu names like "System Update"
     if (i == menuIndex && strlen(menuItems[i]) > 10) {
       display.println(String(menuItems[i]).substring(0, 10));
     } else {
@@ -322,7 +334,6 @@ void runJarvis() {
   if (registeredTaps == 1) {
     char selectedChar = charset[charIndex];
     if (selectedChar == '<') {
-      // BACKSPACE LOGIC
       if (jarvisMessage.length() > 0) {
         jarvisMessage.remove(jarvisMessage.length() - 1);
       }
@@ -518,13 +529,11 @@ void runOtaMode() {
     display.println(WiFi.localIP().toString());
     display.display();
 
-    // Serve the HTML file upload page
     server.on("/", HTTP_GET, []() {
       server.sendHeader("Connection", "close");
       server.send(200, "text/html", serverIndex);
     });
 
-    // Handle the actual file upload
     server.on("/update", HTTP_POST, []() {
       server.sendHeader("Connection", "close");
       server.send(200, "text/plain", (Update.hasError()) ? "UPDATE FAILED! Rebooting..." : "SUCCESS! Restarting Jarvis...");
@@ -560,10 +569,8 @@ void runOtaMode() {
     otaStarted = true;
   }
 
-  // Actively listen for the iPhone browser
   server.handleClient();
 
-  // Exit OTA mode with a long press
   if (longPress) {
     server.stop();
     otaStarted = false;
