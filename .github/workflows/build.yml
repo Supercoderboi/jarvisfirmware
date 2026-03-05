@@ -5,7 +5,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Install arduino-cli
         run: |
@@ -26,7 +26,7 @@ jobs:
           arduino-cli compile --fqbn esp32:esp32:esp32 Jarvis/Jarvis.ino --export-binaries
           
       - name: Upload BIN file
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Jarvis-Firmware
           path: Jarvis/build/esp32.esp32.esp32/*.bin
