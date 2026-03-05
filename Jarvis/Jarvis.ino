@@ -8,6 +8,10 @@
 #include <BleKeyboard.h>
 #include <time.h>
 
+// Web OTA Headers
+#include <WebServer.h>
+#include <Update.h>
+
 // Power management headers to stop the 38W cable restart loop
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
@@ -45,7 +49,7 @@ const int DAYLIGHT_OFFSET_SEC = 0;
 // ==========================================
 // STATE MACHINE & UI VARIABLES
 // ==========================================
-enum ScreenState { HOME, MENU, JARVIS, SENSORS, TIMER, MUSIC, JARVIS_RESPONSE };
+enum ScreenState { HOME, MENU, JARVIS, SENSORS, TIMER, MUSIC, JARVIS_RESPONSE, OTA_UPDATE };
 ScreenState currentState = HOME;
 
 // Encoder Variables
@@ -62,12 +66,12 @@ int registeredTaps = 0;
 bool longPress = false;       
 const unsigned long TAP_TIMEOUT = 350; 
 
-// Menu Variables
-const char* menuItems[] = {"Jarvis", "Sensors", "Timer", "Music"};
-const int numMenuItems = 4;
+// Menu Variables (Added System Update)
+const char* menuItems[] = {"Jarvis", "Sensors", "Timer", "Music", "System Update"};
+const int numMenuItems = 5;
 int menuIndex = 0;
 
-// Jarvis Variables (ADDED '<' FOR BACKSPACE)
+// Jarvis Variables (Added '<' for Backspace)
 const char charset[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?<";
 int charIndex = 0;
 String jarvisMessage = "";
@@ -78,6 +82,19 @@ int jarvisScrollY = 0;
 int timerMinutes = 1;
 unsigned long timerEndTime = 0;
 bool timerRunning = false;
+
+// OTA Variables
+WebServer server(80);
+bool otaStarted = false;
+
+const char* serverIndex = 
+  "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+  "<h2 style='font-family:sans-serif;'>Jarvis System Update</h2>"
+  "<p style='font-family:sans-serif;'>Select the new .bin file from your iPhone to flash.</p>"
+  "<form method='POST' action='/update' enctype='multipart/form-data'>"
+  "<input type='file' name='update' accept='.bin' style='margin-bottom:20px;'><br>"
+  "<input type='submit' value='Update Firmware' style='padding:10px 20px; background:#007BFF; color:white; border:none; border-radius:5px;'>"
+  "</form>";
 
 // ==========================================
 // INTERRUPT SERVICE ROUTINE (ENCODER)
@@ -104,7 +121,7 @@ void IRAM_ATTR readEncoder() {
 // SETUP
 // ==========================================
 void setup() {
-  // DISABLE BROWNOUT PANIC (Protects against 38W chargers)
+  // DISABLE BROWNOUT PANIC (Protects against 38W chargers causing restart loops)
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); 
   
   Serial.begin(115200);
@@ -163,6 +180,7 @@ void loop() {
     case SENSORS:         runSensors(); break;
     case TIMER:           runTimer(); break;
     case MUSIC:           runMusic(); break;
+    case OTA_UPDATE:      runOtaMode(); break;
   }
 
   registeredTaps = 0;
@@ -248,7 +266,13 @@ void runMenu() {
   for (int i = 0; i < numMenuItems; i++) {
     if (i == menuIndex) display.print(">");
     else display.print(" ");
-    display.println(menuItems[i]);
+    
+    // Scrolling logic for long menu names like "System Update"
+    if (i == menuIndex && strlen(menuItems[i]) > 10) {
+      display.println(String(menuItems[i]).substring(0, 10));
+    } else {
+      display.println(menuItems[i]);
+    }
   }
   display.display();
 
@@ -259,6 +283,7 @@ void runMenu() {
     else if (menuIndex == 1) currentState = SENSORS;
     else if (menuIndex == 2) currentState = TIMER;
     else if (menuIndex == 3) currentState = MUSIC;
+    else if (menuIndex == 4) currentState = OTA_UPDATE;
   }
   
   if (longPress) {
@@ -297,12 +322,11 @@ void runJarvis() {
   if (registeredTaps == 1) {
     char selectedChar = charset[charIndex];
     if (selectedChar == '<') {
-      // --- BACKSPACE TRIGGERED ---
+      // BACKSPACE LOGIC
       if (jarvisMessage.length() > 0) {
         jarvisMessage.remove(jarvisMessage.length() - 1);
       }
     } else {
-      // --- NORMAL LETTER TRIGGERED ---
       jarvisMessage += selectedChar;
     }
   }
@@ -347,7 +371,7 @@ void sendToJarvis(String msg) {
       
       if (!error) {
         jarvisReply = respDoc["response"].as<String>();
-        jarvisScrollY = 0; // Reset scroll to top
+        jarvisScrollY = 0; 
       } else {
         jarvisReply = "JSON Error";
       }
@@ -375,8 +399,6 @@ void runJarvisResponse() {
   if (jarvisScrollY > maxScroll) jarvisScrollY = maxScroll;
 
   display.clearDisplay();
-  
-  // Set Y to a negative number to push text up
   display.setCursor(0, -jarvisScrollY); 
   display.print(jarvisReply); 
   display.display();
@@ -480,6 +502,71 @@ void runMusic() {
   if (registeredTaps == 3) bleKeyboard.write(KEY_MEDIA_NEXT_TRACK);
   
   if (longPress) {
+    currentState = MENU;
+  }
+}
+
+// ==========================================
+// OTA WEBSERVER MODE
+// ==========================================
+void runOtaMode() {
+  if (!otaStarted) {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println("OTA MODE ON");
+    display.println("Open Safari:");
+    display.println(WiFi.localIP().toString());
+    display.display();
+
+    // Serve the HTML file upload page
+    server.on("/", HTTP_GET, []() {
+      server.sendHeader("Connection", "close");
+      server.send(200, "text/html", serverIndex);
+    });
+
+    // Handle the actual file upload
+    server.on("/update", HTTP_POST, []() {
+      server.sendHeader("Connection", "close");
+      server.send(200, "text/plain", (Update.hasError()) ? "UPDATE FAILED! Rebooting..." : "SUCCESS! Restarting Jarvis...");
+      delay(2000);
+      ESP.restart();
+    }, []() {
+      HTTPUpload& upload = server.upload();
+      
+      if (upload.status == UPLOAD_FILE_START) {
+        display.clearDisplay();
+        display.setCursor(0, 0);
+        display.println("Receiving...");
+        display.display();
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { 
+          Update.printError(Serial); 
+        }
+      } else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+          Update.printError(Serial);
+        }
+      } else if (upload.status == UPLOAD_FILE_END) {
+        if (Update.end(true)) {
+          display.clearDisplay();
+          display.setCursor(0, 0);
+          display.println("DONE!");
+          display.println("Rebooting...");
+          display.display();
+        }
+      }
+    });
+
+    server.begin();
+    otaStarted = true;
+  }
+
+  // Actively listen for the iPhone browser
+  server.handleClient();
+
+  // Exit OTA mode with a long press
+  if (longPress) {
+    server.stop();
+    otaStarted = false;
     currentState = MENU;
   }
 }
