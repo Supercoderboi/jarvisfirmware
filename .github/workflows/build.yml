@@ -1,0 +1,32 @@
+name: Build Jarvis ESP32
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Install arduino-cli
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          sudo mv bin/arduino-cli /usr/local/bin/
+          
+      - name: Setup ESP32 Core & Libraries
+        run: |
+          arduino-cli core update-index --additional-urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+          arduino-cli core install esp32:esp32 --additional-urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+          arduino-cli lib install "ArduinoJson" "DHT sensor library" "Adafruit GFX Library" "Adafruit PCD8544 Nokia 5110 LCD library"
+          mkdir -p ~/Arduino/libraries
+          git clone https://github.com/T-vK/ESP32-BLE-Keyboard.git ~/Arduino/libraries/ESP32-BLE-Keyboard
+          git clone https://github.com/h2zero/NimBLE-Arduino.git ~/Arduino/libraries/NimBLE-Arduino
+          
+      - name: Compile Code
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32 Jarvis/Jarvis.ino --export-binaries
+          
+      - name: Upload BIN file
+        uses: actions/upload-artifact@v3
+        with:
+          name: Jarvis-Firmware
+          path: Jarvis/build/esp32.esp32.esp32/*.bin
