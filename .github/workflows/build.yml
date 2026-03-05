@@ -15,7 +15,6 @@ jobs:
       - name: Setup ESP32 Core & Libraries
         run: |
           arduino-cli core update-index --additional-urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
-          # Notice the @2.0.17 added to the line below!
           arduino-cli core install esp32:esp32@2.0.17 --additional-urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
           arduino-cli lib install "ArduinoJson" "DHT sensor library" "Adafruit GFX Library" "Adafruit PCD8544 Nokia 5110 LCD library"
           mkdir -p ~/Arduino/libraries
@@ -24,8 +23,7 @@ jobs:
           
       - name: Compile Code
         run: |
-          # Notice the fqbn here is still exactly the same, it just uses the 2.0.17 core we downloaded above
-          arduino-cli compile --fqbn esp32:esp32:esp32 Jarvis/Jarvis.ino --export-binaries
+          arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=min_spiffs Jarvis/Jarvis.ino --export-binaries
           
       - name: Upload BIN file
         uses: actions/upload-artifact@v4
