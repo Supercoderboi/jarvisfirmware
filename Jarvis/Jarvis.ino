@@ -49,7 +49,8 @@ const int DAYLIGHT_OFFSET_SEC = 0;
 // ==========================================
 // STATE MACHINE & UI VARIABLES
 // ==========================================
-enum ScreenState { HOME, MENU, JARVIS, SENSORS, TIMER, MUSIC, JARVIS_RESPONSE, OTA_UPDATE };
+// Added TIMER_ALARM state
+enum ScreenState { HOME, MENU, JARVIS, SENSORS, TIMER, MUSIC, JARVIS_RESPONSE, OTA_UPDATE, TIMER_ALARM };
 ScreenState currentState = HOME;
 
 // Encoder Variables
@@ -61,9 +62,9 @@ bool btnState = false;
 bool lastBtnState = false;
 unsigned long btnPressTime = 0;
 unsigned long btnReleaseTime = 0;
-int tapCount = 0;             
-int registeredTaps = 0;       
-bool longPress = false;       
+int tapCount = 0;              
+int registeredTaps = 0;        
+bool longPress = false;        
 const unsigned long TAP_TIMEOUT = 350; 
 
 // Menu Variables
@@ -78,8 +79,11 @@ String jarvisMessage = "";
 String jarvisReply = "";
 int jarvisScrollY = 0; 
 
-// Timer Variables
-int timerMinutes = 1;
+// UPGRADED Timer Variables (3 Dials & Background)
+int timerHours = 0;
+int timerMinutes = 0;
+int timerSeconds = 0;
+int timerSetupStage = 0; // 0=Hours, 1=Minutes, 2=Seconds
 unsigned long timerEndTime = 0;
 bool timerRunning = false;
 
@@ -90,7 +94,7 @@ bool otaStarted = false;
 const char* serverIndex = 
   "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
   "<h2 style='font-family:sans-serif;'>Jarvis System Update</h2>"
-  "<p style='font-family:sans-serif;'>Select the new .bin file from your iPhone to flash.</p>"
+  "<p style='font-family:sans-serif;'>Select the new .bin file from your phone to flash.</p>"
   "<form method='POST' action='/update' enctype='multipart/form-data'>"
   "<input type='file' name='update' accept='.bin' style='margin-bottom:20px;'><br>"
   "<input type='submit' value='Update Firmware' style='padding:10px 20px; background:#007BFF; color:white; border:none; border-radius:5px;'>"
@@ -171,6 +175,12 @@ void setup() {
 void loop() {
   handleButton();
 
+  // BACKGROUND TIMER CHECK
+  if (timerRunning && millis() >= timerEndTime) {
+    timerRunning = false;          // Stop the timer
+    currentState = TIMER_ALARM;    // Interrupt whatever app you are in
+  }
+
   switch (currentState) {
     case HOME:            runHome(); break;
     case MENU:            runMenu(); break;
@@ -180,11 +190,13 @@ void loop() {
     case TIMER:           runTimer(); break;
     case MUSIC:           runMusic(); break;
     case OTA_UPDATE:      runOtaMode(); break;
+    case TIMER_ALARM:     runTimerAlarm(); break;
   }
 
   registeredTaps = 0;
   longPress = false;
   
+  // FIX: Disable the 30ms delay ONLY when in OTA mode so the Wi-Fi buffer doesn't overflow!
   if (currentState != OTA_UPDATE) {
     delay(30); 
   }
@@ -446,54 +458,118 @@ void runSensors() {
   }
 }
 
+// UPGRADED 3-DIAL TIMER
 void runTimer() {
   int delta = getEncoderDelta();
   
   if (!timerRunning) {
-    if (delta > 0) timerMinutes++;
-    if (delta < 0 && timerMinutes > 1) timerMinutes--;
+    // 3-Dial Setup Logic
+    if (timerSetupStage == 0) {
+      if (delta > 0) timerHours++;
+      if (delta < 0 && timerHours > 0) timerHours--;
+    } else if (timerSetupStage == 1) {
+      if (delta > 0) timerMinutes++;
+      if (delta < 0 && timerMinutes > 0) timerMinutes--;
+      if (timerMinutes > 59) timerMinutes = 0; 
+    } else if (timerSetupStage == 2) {
+      if (delta > 0) timerSeconds++;
+      if (delta < 0 && timerSeconds > 0) timerSeconds--;
+      if (timerSeconds > 59) timerSeconds = 0;
+    }
 
     display.clearDisplay();
     display.setCursor(0, 0);
     display.println("Set Timer:");
+    
+    display.setCursor(0, 15);
+    // UI for Hours
+    if (timerSetupStage == 0) display.print("["); else display.print(" ");
+    display.print(timerHours);
+    if (timerSetupStage == 0) display.print("]h "); else display.print(" h ");
+    
+    // UI for Minutes
+    if (timerSetupStage == 1) display.print("["); else display.print(" ");
     display.print(timerMinutes);
-    display.println(" min");
-    display.println("(Tap to start)");
+    if (timerSetupStage == 1) display.print("]m "); else display.print(" m ");
+    
+    // UI for Seconds (Wrapped to next line so it fits the Nokia screen well)
+    display.setCursor(0, 25);
+    if (timerSetupStage == 2) display.print("["); else display.print(" ");
+    display.print(timerSeconds);
+    if (timerSetupStage == 2) display.println("]s"); else display.println(" s");
+
+    display.setCursor(0, 38);
+    display.println("(Tap to next)");
     display.display();
 
     if (registeredTaps == 1) {
-      timerEndTime = millis() + (timerMinutes * 60000UL);
-      timerRunning = true;
+      timerSetupStage++;
+      if (timerSetupStage > 2) { // Finished setting all 3 dials
+        // Calculate total time in milliseconds
+        unsigned long totalMs = (timerHours * 3600000UL) + (timerMinutes * 60000UL) + (timerSeconds * 1000UL);
+        if (totalMs > 0) {
+          timerEndTime = millis() + totalMs;
+          timerRunning = true;
+        }
+        timerSetupStage = 0; // Reset for next time
+        currentState = HOME; // Go back to home so it runs in background
+      }
     }
+    
     if (longPress) {
+      timerSetupStage = 0;
       currentState = MENU;
     }
+    
   } else {
+    // If you open the Timer app while it's already running, show the countdown
     unsigned long now = millis();
+    unsigned long timeLeft = timerEndTime - now;
+    
+    int h = (timeLeft / 3600000UL);
+    int m = ((timeLeft % 3600000UL) / 60000UL);
+    int s = ((timeLeft % 60000UL) / 1000UL);
+    
     display.clearDisplay();
     display.setCursor(0, 0);
-    
-    if (now >= timerEndTime) {
-      display.println("TIME'S UP!");
-      if (registeredTaps > 0 || longPress) {
-        timerRunning = false;
-        currentState = MENU;
-      }
-    } else {
-      unsigned long timeLeft = timerEndTime - now;
-      int m = (timeLeft / 60000);
-      int s = ((timeLeft % 60000) / 1000);
-      display.println("Time Left:");
-      display.print(m);
-      display.print("m ");
-      display.print(s);
-      display.println("s");
-      
-      if (registeredTaps == 1 || longPress) {
-        timerRunning = false; 
-      }
-    }
+    display.println("- RUNNING -");
+    display.print(h); display.print("h ");
+    display.print(m); display.print("m ");
+    display.print(s); display.println("s");
+    display.println();
+    display.println("(Hold=Stop)");
     display.display();
+    
+    if (longPress) {
+      timerRunning = false;
+      timerSetupStage = 0;
+      currentState = MENU;
+    }
+  }
+}
+
+// NEW ALARM SCREEN
+void runTimerAlarm() {
+  // Flash the screen by inverting colors every 500ms
+  if ((millis() / 500) % 2 == 0) {
+    display.setTextColor(WHITE, BLACK); 
+  } else {
+    display.setTextColor(BLACK, WHITE);
+  }
+
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setCursor(10, 15);
+  display.println("TIME");
+  display.setCursor(25, 30);
+  display.println("UP!");
+  display.display();
+
+  // Reset text color to normal if you click the button to dismiss
+  if (registeredTaps > 0 || longPress) {
+    display.setTextColor(BLACK); 
+    display.setTextSize(1);
+    currentState = HOME;
   }
 }
 
