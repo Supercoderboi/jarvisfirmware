@@ -185,7 +185,9 @@ void loop() {
   registeredTaps = 0;
   longPress = false;
   
-  delay(30); 
+  if (currentState != OTA_UPDATE) {
+    delay(30); 
+  }
 }
 
 // ==========================================
