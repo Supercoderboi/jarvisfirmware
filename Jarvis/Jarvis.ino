@@ -91,7 +91,7 @@ String jarvisReply = "";
 int jarvisScrollY = 0; 
 
 // You can safely expand this list to thousands of words. Keep it alphabetical for sanity.
-const int DICT_SIZE = 45;
+const int DICT_SIZE = 49;
 const char* const dictionary[DICT_SIZE] PROGMEM = {
   "ABOUT", "ACTIVATE", "ALARM", "ANALYZE", "AUDIO", "BOOT", "CALCULATE", "CHECK", 
   "CLEAR", "CLOSE", "CONNECT", "COULSON", "DATA", "DEACTIVATE", "DELETE", "DISABLE", 
