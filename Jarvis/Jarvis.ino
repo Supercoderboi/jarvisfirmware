@@ -2,6 +2,8 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_PCD8544.h>
 #include <BleKeyboard.h>
+#include <WiFi.h>
+#include <ArduinoOTA.h>
 
 // ==========================================
 // PIN DEFINITIONS (Update to match your wiring!)
@@ -15,11 +17,18 @@ Adafruit_PCD8544 display = Adafruit_PCD8544(18, 23, 4, 15, 2);
 #define ENCODER_SW  25
 
 // ==========================================
+// WIFI CREDENTIALS FOR OTA
+// ==========================================
+const char* ssid = "Airtel_Ethria2.4";
+const char* password = "PalmDale007";
+bool otaInitialized = false;
+
+// ==========================================
 // SYSTEM VARIABLES
 // ==========================================
 BleKeyboard bleKeyboard("S.H.I.E.L.D. Terminal", "Stark Ind.", 100);
 
-enum ScreenState { HOME, MENU, SENSORS, MUSIC, TIMER_ALARM, TERMINAL, SCREENSAVER };
+enum ScreenState { HOME, MENU, SENSORS, MUSIC, TIMER_ALARM, TERMINAL, OTA_UPDATE, SCREENSAVER };
 ScreenState currentState = HOME;
 
 // --- Encoder & Button Tracking ---
@@ -34,8 +43,8 @@ bool longPress = false;
 int registeredTaps = 0;
 
 // --- Menu System Variables ---
-const int NUM_MENU_ITEMS = 4;
-String menuItems[NUM_MENU_ITEMS] = {"1. Sensors", "2. Music Ctrl", "3. Start Timer", "4. Terminal"};
+const int NUM_MENU_ITEMS = 5;
+String menuItems[NUM_MENU_ITEMS] = {"1. Sensors", "2. Music Ctrl", "3. Start Timer", "4. Terminal", "5. OTA Update"};
 int currentMenuIndex = 0;
 
 // --- Terminal & Autocomplete Variables ---
@@ -137,40 +146,27 @@ void handleButton() {
 // KREE SCREENSAVER (Digital Rain)
 // ==========================================
 void runScreensaver() {
-  // Update the animation frame every 80ms
   if (millis() - lastFrameTime > 80) { 
     lastFrameTime = millis();
-    
     for (int i = 0; i < 14; i++) {
-      // 1. Erase the "tail" (4 characters behind the head)
       int tailY = (kreeDrops[i] - 4) * 8;
-      if (tailY >= 0) {
-        display.fillRect(i * 6, tailY, 6, 8, WHITE); // WHITE erases pixels
-      }
+      if (tailY >= 0) display.fillRect(i * 6, tailY, 6, 8, WHITE); 
       
-      // 2. Draw a new random cryptic character at the "head"
       int headY = kreeDrops[i] * 8;
       if (headY >= 0 && headY < 48) {
         display.setCursor(i * 6, headY);
-        // ASCII 33 to 90 provides uppercase letters, numbers, and symbols
         char c = random(33, 90); 
         display.print(c);
       }
-      
-      // 3. Move the drop down one row
       kreeDrops[i]++;
-      
-      // 4. Reset the drop to the top if it falls off the bottom (with random delay)
       if (kreeDrops[i] * 8 > 48 + random(0, 50)) {
         kreeDrops[i] = random(-10, 0);
-        // Wipe the rest of the column to prevent ghosting
         display.fillRect(i * 6, 0, 6, 48, WHITE);
       }
     }
     display.display();
   }
 
-  // WAKE UP SEQUENCE: Any touch brings it back to reality
   if (encoderDelta != 0 || registeredTaps > 0 || longPress) {
     lastActivityTime = millis();
     encoderCount = 0;
@@ -196,15 +192,12 @@ void loop() {
   // --- SCREENSAVER TRIGGER LOGIC ---
   if (millis() - lastActivityTime > SCREENSAVER_TIMEOUT && 
       currentState != SCREENSAVER && 
-      currentState != TIMER_ALARM) {
+      currentState != TIMER_ALARM &&
+      currentState != OTA_UPDATE) { // Never trigger screensaver during OTA!
     
     currentState = SCREENSAVER;
     display.clearDisplay();
-    
-    // Stagger the starting heights of the falling text
-    for(int i = 0; i < 14; i++) {
-      kreeDrops[i] = random(-15, 0); 
-    }
+    for(int i = 0; i < 14; i++) kreeDrops[i] = random(-15, 0); 
   }
 
   // --- STATE MACHINE UI ---
@@ -240,23 +233,19 @@ void loop() {
       display.println(">> MAIN MENU");
       display.drawLine(0, 10, 84, 10, BLACK);
 
-      // Scroll Logic
       if (encoderDelta != 0) {
         currentMenuIndex = encoderCount % NUM_MENU_ITEMS;
         if (currentMenuIndex < 0) currentMenuIndex += NUM_MENU_ITEMS;
       }
 
-      // Display selected item
       display.setCursor(0, 20);
       display.print(">");
       display.println(menuItems[currentMenuIndex]);
 
-      // Selection Logic
       if (registeredTaps == 1) {
         if (currentMenuIndex == 0) currentState = SENSORS;
         if (currentMenuIndex == 1) currentState = MUSIC;
         if (currentMenuIndex == 2) {
-          // Start a 60-second background timer as an example
           timerRunning = true;
           timerEndTime = millis() + 60000; 
           currentState = HOME; 
@@ -264,20 +253,21 @@ void loop() {
         if (currentMenuIndex == 3) {
           currentState = TERMINAL;
           currentInput = "";
-          encoderCount = 0; // Reset dial to start at 'A'
+          encoderCount = 0; 
+        }
+        if (currentMenuIndex == 4) {
+          currentState = OTA_UPDATE;
+          otaInitialized = false; // Reset the flag so WiFi boots up
         }
       }
       
-      // Go back
       if (longPress) currentState = HOME;
       display.display();
       break;
 
     case TERMINAL:
-      { // Brackets required here so variable declarations don't break the switch statement
+      { 
         display.clearDisplay();
-        
-        // 1. Calculate the Predicted Word based on dictionary
         predictedWord = "";
         if (currentInput.length() > 0) {
           for (int i = 0; i < DICT_SIZE; i++) {
@@ -288,24 +278,21 @@ void loop() {
           }
         }
 
-        // 2. Wheel Logic (30 options: A-Z, Space, Backspace, Autocomplete, Send)
         int charIndex = encoderCount % 30;
         if (charIndex < 0) charIndex += 30;
         
         char selectedChar;
-        if (charIndex < 26) selectedChar = 'A' + charIndex; // A-Z
-        else if (charIndex == 26) selectedChar = '_';       // Space
-        else if (charIndex == 27) selectedChar = '<';       // Backspace
-        else if (charIndex == 28) selectedChar = '*';       // Autocomplete trigger
-        else selectedChar = '>';                            // Send/Execute trigger
+        if (charIndex < 26) selectedChar = 'A' + charIndex; 
+        else if (charIndex == 26) selectedChar = '_';       
+        else if (charIndex == 27) selectedChar = '<';       
+        else if (charIndex == 28) selectedChar = '*';       
+        else selectedChar = '>';                            
 
-        // 3. Draw UI
         display.setCursor(0, 0);
         display.print("CMD: ");
         display.setCursor(0, 10);
         display.print(currentInput);
         
-        // Draw suggestion faintly
         display.setCursor(0, 20);
         if (predictedWord != "") {
           display.print("~");
@@ -317,18 +304,12 @@ void loop() {
         display.print(selectedChar);
         display.print(" ]");
 
-        // 4. Input Actions
         if (registeredTaps == 1) {
-          if (selectedChar >= 'A' && selectedChar <= 'Z' && currentInput.length() < 13) {
-            currentInput += selectedChar; // Add letter
-          } else if (selectedChar == '_' && currentInput.length() < 13) {
-            currentInput += ' ';          // Add space
-          } else if (selectedChar == '<' && currentInput.length() > 0) {
-            currentInput.remove(currentInput.length() - 1); // Delete last character
-          } else if (selectedChar == '*' && predictedWord != "") {
-            currentInput = predictedWord; // AUTOCOMPLETE IT!
-          } else if (selectedChar == '>') {
-            // EXECUTE COMMAND (For now, just wipes and goes home)
+          if (selectedChar >= 'A' && selectedChar <= 'Z' && currentInput.length() < 13) currentInput += selectedChar; 
+          else if (selectedChar == '_' && currentInput.length() < 13) currentInput += ' ';          
+          else if (selectedChar == '<' && currentInput.length() > 0) currentInput.remove(currentInput.length() - 1); 
+          else if (selectedChar == '*' && predictedWord != "") currentInput = predictedWord; 
+          else if (selectedChar == '>') {
             currentInput = "";
             currentState = HOME;
           }
@@ -336,6 +317,62 @@ void loop() {
 
         if (longPress) currentState = MENU;
         display.display();
+      }
+      break;
+
+    case OTA_UPDATE:
+      {
+        if (!otaInitialized) {
+          display.clearDisplay();
+          display.setCursor(0, 0);
+          display.println("SECURE UPLINK");
+          display.println("Connecting...");
+          display.display();
+
+          WiFi.mode(WIFI_STA);
+          WiFi.begin(ssid, password);
+          
+          // Wait up to 10 seconds for connection
+          unsigned long startAttempt = millis();
+          while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
+            delay(500);
+            display.print(".");
+            display.display();
+          }
+
+          if (WiFi.status() == WL_CONNECTED) {
+            ArduinoOTA.setHostname("SHIELD-Terminal");
+            ArduinoOTA.begin();
+            display.clearDisplay();
+            display.setCursor(0, 0);
+            display.println("UPLINK ACTIVE");
+            display.println("IP Address:");
+            display.println(WiFi.localIP());
+            display.setCursor(0, 40);
+            display.print("[Hold to Exit]");
+          } else {
+            display.clearDisplay();
+            display.setCursor(0, 0);
+            display.println("UPLINK FAILED");
+            display.println("Check Network");
+            display.setCursor(0, 40);
+            display.print("[Hold to Exit]");
+          }
+          display.display();
+          otaInitialized = true;
+        }
+
+        // Listen for new code over the air
+        if (WiFi.status() == WL_CONNECTED) {
+          ArduinoOTA.handle();
+        }
+
+        // Shut down WiFi and leave mode to save memory
+        if (longPress) {
+          WiFi.disconnect(true);
+          WiFi.mode(WIFI_OFF);
+          currentState = MENU;
+        }
       }
       break;
 
@@ -347,7 +384,6 @@ void loop() {
       display.println("Hum:  45%");
       display.setCursor(0, 35);
       display.println("[Hold to exit]");
-      
       if (longPress) currentState = MENU;
       display.display();
       break;
@@ -359,19 +395,13 @@ void loop() {
       display.println("Tap: Play/Pse");
       display.println("Dial: Volume");
       
-      if (bleKeyboard.isConnected()) {
-        display.println("BLE: Linked");
-        
-        // Volume Control
-        if (encoderDelta > 0) bleKeyboard.write(KEY_MEDIA_VOLUME_UP);
-        if (encoderDelta < 0) bleKeyboard.write(KEY_MEDIA_VOLUME_DOWN);
-        // Play/Pause
-        if (registeredTaps == 1) bleKeyboard.write(KEY_MEDIA_PLAY_PAUSE);
-        
-      } else {
-        display.println("BLE: Offline");
-      }
+      if (bleKeyboard.isConnected()) display.println("BLE: Linked");
+      else display.println("BLE: Offline");
 
+      if (encoderDelta > 0) bleKeyboard.write(KEY_MEDIA_VOLUME_UP);
+      if (encoderDelta < 0) bleKeyboard.write(KEY_MEDIA_VOLUME_DOWN);
+      if (registeredTaps == 1) bleKeyboard.write(KEY_MEDIA_PLAY_PAUSE);
+      
       if (longPress) currentState = MENU;
       display.display();
       break;
@@ -384,7 +414,6 @@ void loop() {
       display.println("COMPLETE!");
       display.setCursor(0, 40);
       display.println("[Tap to Ack]");
-      
       if (registeredTaps > 0 || longPress) currentState = HOME;
       display.display();
       break;
