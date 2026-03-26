@@ -19,7 +19,7 @@ Adafruit_PCD8544 display = Adafruit_PCD8544(18, 23, 4, 15, 2);
 // ==========================================
 BleKeyboard bleKeyboard("S.H.I.E.L.D. Terminal", "Stark Ind.", 100);
 
-enum ScreenState { HOME, MENU, SENSORS, MUSIC, TIMER_ALARM, SCREENSAVER };
+enum ScreenState { HOME, MENU, SENSORS, MUSIC, TIMER_ALARM, TERMINAL, SCREENSAVER };
 ScreenState currentState = HOME;
 
 // --- Encoder & Button Tracking ---
@@ -34,9 +34,19 @@ bool longPress = false;
 int registeredTaps = 0;
 
 // --- Menu System Variables ---
-const int NUM_MENU_ITEMS = 3;
-String menuItems[NUM_MENU_ITEMS] = {"1. Sensors", "2. Music Ctrl", "3. Start Timer"};
+const int NUM_MENU_ITEMS = 4;
+String menuItems[NUM_MENU_ITEMS] = {"1. Sensors", "2. Music Ctrl", "3. Start Timer", "4. Terminal"};
 int currentMenuIndex = 0;
+
+// --- Terminal & Autocomplete Variables ---
+String currentInput = "";
+String predictedWord = "";
+const int DICT_SIZE = 14;
+const char* dictionary[DICT_SIZE] = {
+  "WEATHER", "STATUS", "TIMER", "MUSIC", "LIGHTS", 
+  "LOCK", "OVERRIDE", "TAHITI", "CLEARANCE", "SHIELD", 
+  "COULSON", "HELP", "OFF", "ON"
+};
 
 // --- Background Timer Variables ---
 bool timerRunning = false;
@@ -79,15 +89,17 @@ void setup() {
 // ==========================================
 void handleEncoder() {
   static int lastClk = HIGH;
+  static unsigned long lastEncoderJitter = 0; // Jitter debounce
   int newClk = digitalRead(ENCODER_CLK);
   
-  if (newClk != lastClk && newClk == LOW) {
+  if (newClk != lastClk && newClk == LOW && (millis() - lastEncoderJitter > 5)) {
     if (digitalRead(ENCODER_DT) == LOW) {
       encoderCount--;
     } else {
       encoderCount++;
     }
     lastActivityTime = millis(); // Reset screensaver timer
+    lastEncoderJitter = millis();
   }
   lastClk = newClk;
   
@@ -249,11 +261,82 @@ void loop() {
           timerEndTime = millis() + 60000; 
           currentState = HOME; 
         }
+        if (currentMenuIndex == 3) {
+          currentState = TERMINAL;
+          currentInput = "";
+          encoderCount = 0; // Reset dial to start at 'A'
+        }
       }
       
       // Go back
       if (longPress) currentState = HOME;
       display.display();
+      break;
+
+    case TERMINAL:
+      { // Brackets required here so variable declarations don't break the switch statement
+        display.clearDisplay();
+        
+        // 1. Calculate the Predicted Word based on dictionary
+        predictedWord = "";
+        if (currentInput.length() > 0) {
+          for (int i = 0; i < DICT_SIZE; i++) {
+            if (String(dictionary[i]).startsWith(currentInput)) {
+              predictedWord = String(dictionary[i]);
+              break;
+            }
+          }
+        }
+
+        // 2. Wheel Logic (30 options: A-Z, Space, Backspace, Autocomplete, Send)
+        int charIndex = encoderCount % 30;
+        if (charIndex < 0) charIndex += 30;
+        
+        char selectedChar;
+        if (charIndex < 26) selectedChar = 'A' + charIndex; // A-Z
+        else if (charIndex == 26) selectedChar = '_';       // Space
+        else if (charIndex == 27) selectedChar = '<';       // Backspace
+        else if (charIndex == 28) selectedChar = '*';       // Autocomplete trigger
+        else selectedChar = '>';                            // Send/Execute trigger
+
+        // 3. Draw UI
+        display.setCursor(0, 0);
+        display.print("CMD: ");
+        display.setCursor(0, 10);
+        display.print(currentInput);
+        
+        // Draw suggestion faintly
+        display.setCursor(0, 20);
+        if (predictedWord != "") {
+          display.print("~");
+          display.print(predictedWord);
+        }
+
+        display.setCursor(0, 35);
+        display.print("Char: [ ");
+        display.print(selectedChar);
+        display.print(" ]");
+
+        // 4. Input Actions
+        if (registeredTaps == 1) {
+          if (selectedChar >= 'A' && selectedChar <= 'Z' && currentInput.length() < 13) {
+            currentInput += selectedChar; // Add letter
+          } else if (selectedChar == '_' && currentInput.length() < 13) {
+            currentInput += ' ';          // Add space
+          } else if (selectedChar == '<' && currentInput.length() > 0) {
+            currentInput.remove(currentInput.length() - 1); // Delete last character
+          } else if (selectedChar == '*' && predictedWord != "") {
+            currentInput = predictedWord; // AUTOCOMPLETE IT!
+          } else if (selectedChar == '>') {
+            // EXECUTE COMMAND (For now, just wipes and goes home)
+            currentInput = "";
+            currentState = HOME;
+          }
+        }
+
+        if (longPress) currentState = MENU;
+        display.display();
+      }
       break;
 
     case SENSORS:
