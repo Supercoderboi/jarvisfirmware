@@ -395,10 +395,23 @@ void runSettings() {
 }
 
 // ==========================================
-// LIVE API AUTOCOMPLETE FUNCTION
+// LIVE API AUTOCOMPLETE FUNCTION (V9.1 FIX)
 // ==========================================
 void fetchPrediction(String input) {
   if (input.length() == 0) {
+    predictedWord = "";
+    return;
+  }
+
+  // 1. Isolate the current word being typed (ignore everything before the last space)
+  int lastSpaceIndex = input.lastIndexOf(' ');
+  String currentWord = input;
+  if (lastSpaceIndex != -1) {
+    currentWord = input.substring(lastSpaceIndex + 1);
+  }
+
+  // If the user just typed a space and hasn't started a new word, don't predict
+  if (currentWord.length() == 0) {
     predictedWord = "";
     return;
   }
@@ -409,12 +422,11 @@ void fetchPrediction(String input) {
   display.display();
 
   if (WiFi.status() == WL_CONNECTED) {
-    WiFiClientSecure client;
-    client.setInsecure(); // Bypass SSL verification for Datamuse
+    WiFiClient client; // FIX: Switched to standard WiFiClient (No SSL overhead)
     HTTPClient http;
     
-    // Datamuse API: Suggest words starting with 'input', max 1 result
-    String url = "https://api.datamuse.com/sug?s=" + input + "&max=1";
+    // FIX: Using plain HTTP and only sending the currentWord
+    String url = "http://api.datamuse.com/sug?s=" + currentWord + "&max=1";
     http.begin(client, url);
     
     int httpCode = http.GET();
@@ -424,11 +436,20 @@ void fetchPrediction(String input) {
       DeserializationError error = deserializeJson(doc, payload);
       
       if (!error && doc.size() > 0) {
-        predictedWord = doc[0]["word"].as<String>();
-        predictedWord.toUpperCase(); 
+        String suggestion = doc[0]["word"].as<String>();
+        suggestion.toUpperCase(); 
+        
+        // 2. Reconstruct the full phrase with the new prediction at the end
+        if (lastSpaceIndex != -1) {
+          predictedWord = input.substring(0, lastSpaceIndex + 1) + suggestion;
+        } else {
+          predictedWord = suggestion;
+        }
       } else {
-        predictedWord = "";
+        predictedWord = ""; // Clear if no match found
       }
+    } else {
+      predictedWord = ""; // Clear on HTTP error
     }
     http.end();
   }
