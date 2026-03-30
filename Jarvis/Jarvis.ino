@@ -1,5 +1,6 @@
 #include <WiFi.h>
 #include <HTTPClient.h> 
+#include <WiFiClientSecure.h> // NEW: Required for HTTPS API calls
 #include <ArduinoJson.h>
 #include <SPI.h>
 #include <Adafruit_GFX.h>
@@ -17,7 +18,7 @@
 #include "soc/rtc_cntl_reg.h"
 
 // ==========================================
-// PIN DEFINITIONS (Update for your wiring!)
+// PIN DEFINITIONS
 // ==========================================
 #define NOKIA_CLK  18
 #define NOKIA_DIN  19
@@ -33,29 +34,37 @@
 #define DHTTYPE    DHT11
 
 // ==========================================
-// WIFI CREDENTIALS (YOU MUST FILL THESE IN)
+// GLOBAL OBJECTS & CONSTANTS
 // ==========================================
-const char* WIFI_SSID = "YOUR_WIFI_NAME_HERE";
-const char* WIFI_PASS = "YOUR_WIFI_PASSWORD_HERE";
+Adafruit_PCD8544 display = Adafruit_PCD8544(NOKIA_CLK, NOKIA_DIN, NOKIA_DC, NOKIA_CE, NOKIA_RST);
+DHT dht(DHTPIN, DHTTYPE);
+BleKeyboard bleKeyboard("Jarvis Remote", "ESP32", 100);
 
-// J.A.R.V.I.S PythonAnywhere Server
-const char* JARVIS_URL = "http://YOUR_PAW_USERNAME.pythonanywhere.com/command";
+const char* WIFI_SSID = "Airtel_Ethria2.4";
+const char* WIFI_PASS = "PalmDale007";
+const char* JARVIS_URL = "http://jarvisep.pythonanywhere.com/command";
 
-// Timezone (IST is GMT+5:30)
 const long GMT_OFFSET_SEC = 19800; 
 const int DAYLIGHT_OFFSET_SEC = 0;
 
 // ==========================================
-// GLOBAL OBJECTS
+// S.H.I.E.L.D. LOGO BITMAP
 // ==========================================
-Adafruit_PCD8544 display = Adafruit_PCD8544(NOKIA_CLK, NOKIA_DIN, NOKIA_DC, NOKIA_CE, NOKIA_RST);
-DHT dht(DHTPIN, DHTTYPE);
-BleKeyboard bleKeyboard("Jarvis Uplink", "Stark Ind.", 100);
+const uint8_t shield_width    = 48;
+const uint8_t shield_height   = 47;
+const uint8_t PROGMEM shield_bitmap[] = { 
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f, 0xbf, 0xdf, 0xcf, 0xef, 0xf7, 0xf7, 0xfb, 0xfb, 0xff, 0xfd, 0xfd, 0xff, 0xfd, 0xfc, 0xff, 0xfe, 0xfd, 0xff, 0xfd, 0xfd, 0xfd, 0xfd, 0xfb, 0xfb, 0xf7, 0xf7, 0xef, 0xcf, 0xdf, 0xbf, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
+  0xff, 0xff, 0xff, 0x3f, 0xc7, 0xf3, 0xfd, 0xfe, 0x7f, 0x4f, 0x87, 0x03, 0x03, 0x03, 0x07, 0x0f, 0x1f, 0x3f, 0x7f, 0x7f, 0x1f, 0x0f, 0x03, 0x01, 0x01, 0x01, 0x01, 0x1d, 0x7f, 0x3f, 0x3f, 0x1f, 0x0f, 0x07, 0x03, 0x03, 0x03, 0x87, 0xcf, 0x3f, 0x7e, 0xfd, 0xfb, 0xe7, 0x1f, 0xff, 0xff, 0xff, 
+  0xff, 0x17, 0xd8, 0xff, 0xff, 0xff, 0x05, 0x00, 0x10, 0x00, 0x05, 0x03, 0x06, 0x08, 0x78, 0x20, 0xc0, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0xc0, 0x60, 0x30, 0x9c, 0x04, 0x03, 0x05, 0x00, 0x00, 0x00, 0x21, 0xff, 0xff, 0xff, 0xf8, 0x07, 0xff, 
+  0xff, 0xfa, 0xc7, 0x3f, 0xff, 0xff, 0xf0, 0x80, 0x00, 0x00, 0x04, 0x02, 0x01, 0x80, 0xc0, 0xe0, 0xf0, 0x7d, 0x1f, 0x0e, 0x04, 0x08, 0x30, 0x00, 0x40, 0x30, 0x00, 0x0c, 0x0e, 0x1f, 0x7d, 0xf8, 0xe0, 0xc0, 0x80, 0x00, 0x02, 0x00, 0x08, 0x00, 0x80, 0xe0, 0xff, 0xff, 0x7f, 0x87, 0xf8, 0xff, 
+  0xff, 0xff, 0xff, 0xfe, 0xf9, 0xf7, 0xcf, 0xbf, 0x7e, 0x7c, 0xf8, 0xfc, 0xfe, 0xdf, 0x87, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x87, 0xcf, 0xff, 0xfc, 0xf8, 0xf8, 0x7e, 0xbf, 0xdf, 0xe7, 0xf9, 0xfe, 0xff, 0xff, 0xff, 
+  0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7e, 0x7e, 0x7d, 0x7b, 0x7b, 0x77, 0x77, 0x6f, 0x6f, 0x7e, 0x5e, 0x6e, 0x7e, 0x5c, 0x5e, 0x5c, 0x5c, 0x5e, 0x5e, 0x5e, 0x6e, 0x6f, 0x6f, 0x77, 0x77, 0x7b, 0x7b, 0x7d, 0x7e, 0x7e, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f
+};
 
 // ==========================================
 // STATE MACHINE & UI VARIABLES
 // ==========================================
-enum ScreenState { HOME, MENU, JARVIS_SYS, SENSORS, TIMER, MUSIC, SETTINGS, JARVIS_RESPONSE, OTA_UPDATE, TIMER_ALARM, SCREENSAVER };
+enum ScreenState { HOME, MENU, JARVIS, SENSORS, TIMER, MUSIC, SETTINGS, JARVIS_RESPONSE, OTA_UPDATE, TIMER_ALARM, SCREENSAVER };
 ScreenState currentState = HOME;
 
 int displayContrast = 55;
@@ -75,11 +84,20 @@ bool longPress = false;
 const unsigned long TAP_TIMEOUT = 350; 
 
 // Menu Variables
-const char* menuItems[] = {"J.A.R.V.I.S.", "Sensors", "Timer", "Music", "Settings", "System Update"};
+const char* menuItems[] = {"Jarvis", "Sensors", "Timer", "Music", "Settings", "System Update"};
 const int numMenuItems = 6;
 int menuIndex = 0;
 
-// J.A.R.V.I.S Autocomplete Variables
+// Screensaver Variables
+unsigned long lastActivityTime = 0;
+const unsigned long SCREENSAVER_TIMEOUT = 60000; 
+unsigned long lastFrameTime = 0;
+int shieldX = 18;  // Starts centered
+int shieldDir = 1; // 1 = right, -1 = left
+
+// ==========================================
+// J.A.R.V.I.S. AUTOFILL VARIABLES
+// ==========================================
 const char charset[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?<*>";
 int charIndex = 0;
 String jarvisMessage = "";
@@ -87,12 +105,7 @@ String predictedWord = "";
 String jarvisReply = "";
 int jarvisScrollY = 0; 
 
-// --- SCREENSAVER VARIABLES (Wireframe 3D Logo) ---
-unsigned long lastActivityTime = 0;
-const unsigned long SCREENSAVER_TIMEOUT = 60000; // 60 seconds
-unsigned long lastFrameTime = 0;
-
-// UPGRADED Timer Variables
+// Timer Variables
 int timerHours = 0;
 int timerMinutes = 0;
 int timerSeconds = 0;
@@ -128,11 +141,11 @@ void IRAM_ATTR readEncoder() {
   if (encval > 3) {
     encoderCount++;
     encval = 0;
-    lastActivityTime = millis(); // Wake up timer
+    lastActivityTime = millis(); 
   } else if (encval < -3) {
     encoderCount--;
     encval = 0;
-    lastActivityTime = millis(); // Wake up timer
+    lastActivityTime = millis(); 
   }
 }
 
@@ -140,73 +153,46 @@ void IRAM_ATTR readEncoder() {
 // SETUP
 // ==========================================
 void setup() {
-  // Power management trick to stop brownout restart loop from weak cables
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); 
   
   Serial.begin(115200);
 
-  // Initialize Input Pins
   pinMode(ENC_CLK, INPUT_PULLUP);
   pinMode(ENC_DT, INPUT_PULLUP);
   pinMode(ENC_SW, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(ENC_CLK), readEncoder, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENC_DT), readEncoder, CHANGE);
 
-  // Initialize Screen
   display.begin();
   display.setContrast(displayContrast);
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(BLACK);
 
-  // Initialize Hardware & BLE
   dht.begin();
   bleKeyboard.begin();
 
-  // Show Boot Screen
   display.setCursor(0, 0);
-  display.println("DIRECTOR:");
-  display.println("COULSON");
-  display.drawLine(0, 18, 84, 18, BLACK);
-  display.display();
-  delay(1500);
-
-  // WiFi Connection Loop (Requires credentials!)
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println("UPLINK INIT");
-  display.print("Connecting WiFi");
+  display.println("Booting...");
+  display.println("Connecting WiFi");
   display.display();
   
   WiFi.begin(WIFI_SSID, WIFI_PASS);
-  int connectAttempts = 0;
-  while (WiFi.status() != WL_CONNECTED && connectAttempts < 20) {
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     display.print(".");
     display.display();
-    connectAttempts++;
-  }
-
-  // Time Sync
-  if (WiFi.status() == WL_CONNECTED) {
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.println("Syncing Time...");
-    display.display();
-    configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, "pool.ntp.org");
-    
-    struct tm timeinfo;
-    unsigned long startLocalAttempt = millis();
-    while (!getLocalTime(&timeinfo) && (millis() - startLocalAttempt < 10000)) {
-      delay(500);
-    }
   }
 
   display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println("SYSTEM OK.");
+  display.println("Syncing Time...");
   display.display();
-  delay(1000);
+  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, "pool.ntp.org");
+  
+  struct tm timeinfo;
+  while (!getLocalTime(&timeinfo)) {
+    delay(500);
+  }
 
   encoderCount = 0; 
   lastActivityTime = millis();
@@ -218,13 +204,11 @@ void setup() {
 void loop() {
   handleButton();
 
-  // BACKGROUND TIMER CHECK
   if (timerRunning && millis() >= timerEndTime) {
     timerRunning = false;          
     currentState = TIMER_ALARM;    
   }
 
-  // SCREENSAVER TRIGGER LOGIC
   if (millis() - lastActivityTime > SCREENSAVER_TIMEOUT && 
       currentState != SCREENSAVER && 
       currentState != TIMER_ALARM &&
@@ -232,14 +216,15 @@ void loop() {
     
     currentState = SCREENSAVER;
     display.clearDisplay();
-    display.display();
+    // Reset logo to center when screensaver starts
+    shieldX = 18;  
+    shieldDir = 1; 
   }
 
-  // UI STATE MACHINE
   switch (currentState) {
     case HOME:            runHome(); break;
     case MENU:            runMenu(); break;
-    case JARVIS_SYS:      runJarvis(); break;
+    case JARVIS:          runJarvis(); break;
     case JARVIS_RESPONSE: runJarvisResponse(); break;
     case SENSORS:         runSensors(); break;
     case TIMER:           runTimer(); break;
@@ -250,11 +235,9 @@ void loop() {
     case SCREENSAVER:     runScreensaver(); break;
   }
 
-  // Reset fleeting button states
   registeredTaps = 0;
   longPress = false;
   
-  // Throttle loop for stability (except during OTA, to prevent overflow)
   if (currentState != OTA_UPDATE) {
     delay(30); 
   }
@@ -264,12 +247,12 @@ void loop() {
 // INPUT HANDLING
 // ==========================================
 void handleButton() {
-  btnState = !digitalRead(ENC_SW); // Read active-low button
+  btnState = !digitalRead(ENC_SW); 
   unsigned long now = millis();
   
   if (btnState && !lastBtnState) {
     btnPressTime = now;
-    lastActivityTime = now; // Wake up timer
+    lastActivityTime = now;
   }
   
   if (!btnState && lastBtnState) {
@@ -278,12 +261,11 @@ void handleButton() {
       tapCount++;
       btnReleaseTime = now;
     } else if (duration >= 600) {
-      longPress = true; // Registered long press
+      longPress = true;
     }
-    lastActivityTime = now; // Wake up timer
+    lastActivityTime = now; 
   }
 
-  // Process final tap count after timeout
   if (tapCount > 0 && (now - btnReleaseTime) > TAP_TIMEOUT) {
     registeredTaps = tapCount;
     tapCount = 0; 
@@ -299,7 +281,7 @@ int getEncoderDelta() {
 }
 
 // ==========================================
-// HOME SCREEN
+// STATE FUNCTIONS
 // ==========================================
 void runHome() {
   display.clearDisplay();
@@ -313,7 +295,6 @@ void runHome() {
     strftime(dayStr, sizeof(dayStr), "%A", &timeinfo); 
     strftime(dateStr, sizeof(dateStr), "%d %b %Y", &timeinfo);
     
-    // Centering logic
     int timeX = (84 - (strlen(timeStr) * 6)) / 2;
     int dayX = (84 - (strlen(dayStr) * 6)) / 2;
     int dateX = (84 - (strlen(dateStr) * 6)) / 2;
@@ -330,9 +311,6 @@ void runHome() {
     
     display.setCursor(dateX, 31);
     display.print(dateStr);
-  } else {
-    display.setCursor(0, 10);
-    display.print("No WiFi Time");
   }
   display.display();
 
@@ -343,9 +321,6 @@ void runHome() {
   }
 }
 
-// ==========================================
-// SCROLLING MENU (Display 4 items at a time)
-// ==========================================
 void runMenu() {
   int delta = getEncoderDelta();
   if (delta > 0) menuIndex = (menuIndex + 1) % numMenuItems;
@@ -358,7 +333,6 @@ void runMenu() {
   display.setCursor(0, 0);
   display.println("--- MENU ---");
   
-  // Sliding window logic
   int maxVisible = 4;
   int startIndex = menuIndex - 1; 
   if (startIndex < 0) startIndex = 0;
@@ -368,7 +342,7 @@ void runMenu() {
     int currentI = startIndex + i;
     if (currentI >= numMenuItems) break;
     
-    display.setCursor(0, 10 + (i * 9)); // Space out text rows
+    display.setCursor(0, 10 + (i * 9)); 
     if (currentI == menuIndex) display.print(">");
     else display.print(" ");
     
@@ -379,17 +353,16 @@ void runMenu() {
     }
   }
 
-  // Visual Scrollbar on the right edge
-  display.drawLine(82, 10, 82, 48, BLACK); // Scroll track
-  int barY = map(menuIndex, 0, numMenuItems - 1, 10, 40); // Map index to height
-  display.fillRect(80, barY, 4, 8, BLACK); // Scroll handle
+  display.drawLine(82, 10, 82, 48, BLACK); 
+  int barY = map(menuIndex, 0, numMenuItems - 1, 10, 40); 
+  display.fillRect(80, barY, 4, 8, BLACK); 
 
   display.display();
 
   if (registeredTaps == 1) {
     encoderCount = 0;
     lastEncoderCount = 0;
-    if (menuIndex == 0) currentState = JARVIS_SYS;
+    if (menuIndex == 0) currentState = JARVIS;
     else if (menuIndex == 1) currentState = SENSORS;
     else if (menuIndex == 2) currentState = TIMER;
     else if (menuIndex == 3) currentState = MUSIC;
@@ -404,14 +377,11 @@ void runMenu() {
   }
 }
 
-// ==========================================
-// SETTINGS (LIVE CONTRAST)
-// ==========================================
 void runSettings() {
   int delta = getEncoderDelta();
   
   if (delta != 0) {
-    displayContrast += (delta * 2); // Change by 2 to skip flicker
+    displayContrast += (delta * 2); 
     if (displayContrast < 0) displayContrast = 0;
     if (displayContrast > 100) displayContrast = 100;
     display.setContrast(displayContrast);
@@ -438,55 +408,24 @@ void runSettings() {
 }
 
 // ==========================================
-// J.A.R.V.I.S. AUTOCOMPLETE FUNCTION (V9.1 FIX)
+// LIVE API AUTOCOMPLETE FUNCTION
 // ==========================================
 void fetchPrediction(String input) {
-  if (input.length() == 0 || input.endsWith(" ")) {
+  if (input.length() == 0) {
     predictedWord = "";
     return;
   }
 
-  // 1. Isolate the current word being typed
-  int lastSpaceIndex = input.lastIndexOf(' ');
-  String currentWord = "";
-  String previousWord = "";
-
-  if (lastSpaceIndex == -1) {
-    currentWord = input;
-  } else {
-    currentWord = input.substring(lastSpaceIndex + 1);
-    // Extract the PREVIOUS word for context
-    String temp = input.substring(0, lastSpaceIndex);
-    int secondToLastSpace = temp.lastIndexOf(' ');
-    if (secondToLastSpace == -1) {
-      previousWord = temp;
-    } else {
-      previousWord = temp.substring(secondToLastSpace + 1);
-    }
-  }
-
-  if (currentWord.length() == 0) {
-    predictedWord = "";
-    return;
-  }
-
-  // Thinking indicator
   display.setCursor(75, 20);
   display.print("...");
   display.display();
 
   if (WiFi.status() == WL_CONNECTED) {
-    WiFiClient client; // Std client is faster/lower overhead than SSL secure client
+    WiFiClientSecure client;
+    client.setInsecure(); 
     HTTPClient http;
     
-    // 3. Smart query using spelled-like wildcard and left context
-    String url = "http://api.datamuse.com/words?sp=" + currentWord + "*&md=f&max=1";
-    
-    // Add context if we have a previous word
-    if (previousWord.length() > 0) {
-      url += "&lc=" + previousWord;
-    }
-
+    String url = "https://api.datamuse.com/sug?s=" + input + "&max=1";
     http.begin(client, url);
     
     int httpCode = http.GET();
@@ -495,23 +434,17 @@ void fetchPrediction(String input) {
       StaticJsonDocument<256> doc;
       DeserializationError error = deserializeJson(doc, payload);
       
-      // Store suggestion (e.g., "LIGHTS")
       if (!error && doc.size() > 0) {
         predictedWord = doc[0]["word"].as<String>();
         predictedWord.toUpperCase(); 
       } else {
-        predictedWord = ""; 
+        predictedWord = "";
       }
-    } else {
-      predictedWord = ""; 
     }
     http.end();
   }
 }
 
-// ==========================================
-// J.A.R.V.I.S. SYSTEM INPUT
-// ==========================================
 void runJarvis() {
   int delta = getEncoderDelta();
   int charsetLen = strlen(charset);
@@ -532,7 +465,6 @@ void runJarvis() {
     display.println(jarvisMessage);
   }
 
-  // Display ONLY the isolated word prediction
   display.setCursor(0, 20);
   if (predictedWord != "") {
     display.print("~");
@@ -550,18 +482,12 @@ void runJarvis() {
     if (selectedChar == '<') {
       if (jarvisMessage.length() > 0) {
         jarvisMessage.remove(jarvisMessage.length() - 1); 
-        fetchPrediction(jarvisMessage); // Update prediction on delete
+        fetchPrediction(jarvisMessage); 
       }
     } else if (selectedChar == '*') {
-      // THE FIX: Stitch sentence back together with completed word
       if (predictedWord != "") {
-        int lastSpaceIndex = jarvisMessage.lastIndexOf(' ');
-        if (lastSpaceIndex != -1) {
-          jarvisMessage = jarvisMessage.substring(0, lastSpaceIndex + 1) + predictedWord;
-        } else {
-          jarvisMessage = predictedWord;
-        }
-        predictedWord = ""; // Clear prediction
+        jarvisMessage = predictedWord; 
+        predictedWord = ""; 
       }
     } else if (selectedChar == '>') {
        sendToJarvis(jarvisMessage); 
@@ -570,7 +496,7 @@ void runJarvis() {
        currentState = JARVIS_RESPONSE;
     } else {
       jarvisMessage += selectedChar; 
-      fetchPrediction(jarvisMessage); // Update prediction on type
+      fetchPrediction(jarvisMessage); 
     }
   }
   
@@ -758,7 +684,6 @@ void runTimer() {
 }
 
 void runTimerAlarm() {
-  // Screen flash logic
   if ((millis() / 500) % 2 == 0) {
     display.setTextColor(WHITE, BLACK); 
   } else {
@@ -773,7 +698,6 @@ void runTimerAlarm() {
   display.println("UP!");
   display.display();
 
-  // Reset to normal ack
   if (registeredTaps > 0 || longPress) {
     display.setTextColor(BLACK); 
     display.setTextSize(1);
@@ -781,105 +705,27 @@ void runTimerAlarm() {
   }
 }
 
-void runMusic() {
-  int delta = getEncoderDelta();
-
-  display.clearDisplay();
-  display.setTextSize(2);
-  display.setCursor(12, 16); 
-  display.print("MUSIC");
-  display.setTextSize(1); 
-  display.display();
-
-  if (delta > 0) bleKeyboard.write(KEY_MEDIA_VOLUME_UP);
-  if (delta < 0) bleKeyboard.write(KEY_MEDIA_VOLUME_DOWN);
-  
-  if (registeredTaps == 1) bleKeyboard.write(KEY_MEDIA_PLAY_PAUSE);
-  if (registeredTaps == 2) bleKeyboard.write(KEY_MEDIA_PREVIOUS_TRACK);
-  if (registeredTaps == 3) bleKeyboard.write(KEY_MEDIA_NEXT_TRACK);
-  
-  if (longPress) {
-    currentState = MENU;
-  }
-}
-
-// ==========================================
-// 3D ROTATING S.H.I.E.L.D. HOLOGRAM
-// ==========================================
 void runScreensaver() {
-  // Smooth 25 FPS rotation
-  if (millis() - lastFrameTime > 40) { 
+  // Use millis() so the loop isn't blocked and button inputs still register instantly
+  if (millis() - lastFrameTime > 50) { 
     lastFrameTime = millis();
+    
     display.clearDisplay();
-
-    // Static so it remembers its position between frames.
-    static float rotAngle = 0; 
-    
-    // Squashes the X axis from 1.0 to -1.0 to simulate 3D depth
-    float cosA = cos(rotAngle); 
-    
-    // Center of the Nokia 5110 screen
-    int cx = 42; 
-    int cy = 24; 
-
-    // 1. Draw Outer Ring (Faceted wireframe)
-    for (int i = 0; i < 360; i += 15) {
-      float rad1 = i * 0.0174533;       // Convert degrees to radians
-      float rad2 = (i + 15) * 0.0174533;
-
-      int x1 = 22 * cos(rad1);
-      int y1 = 22 * sin(rad1);
-      int x2 = 22 * cos(rad2);
-      int y2 = 22 * sin(rad2);
-
-      // Apply the 3D projection (multiply X by cosA)
-      display.drawLine(cx + (x1 * cosA), cy + y1, cx + (x2 * cosA), cy + y2, BLACK);
-    }
-
-    // 2. Draw Inner Ring
-    for (int i = 0; i < 360; i += 30) {
-      float rad1 = i * 0.0174533;
-      float rad2 = (i + 30) * 0.0174533;
-
-      int x1 = 16 * cos(rad1);
-      int y1 = 16 * sin(rad1);
-      int x2 = 16 * cos(rad2);
-      int y2 = 16 * sin(rad2);
-
-      display.drawLine(cx + (x1 * cosA), cy + y1, cx + (x2 * cosA), cy + y2, BLACK);
-    }
-
-    // 3. Draw S.H.I.E.L.D. Eagle (13 points mapped geometrically)
-    const int NUM_PTS = 13;
-    // (Map out the left wing, down to the tail, and back up the right wing)
-    int ex[NUM_PTS] = { 0, -5, -14, -6, -3, -4,  0,  4,  3,  6, 14,  5,  0};
-    int ey[NUM_PTS] = {-8, -8, -12,  2, -2, 10, 14, 10, -2,  2, -12, -8, -8};
-
-    for (int i = 0; i < NUM_PTS - 1; i++) {
-      int x1 = ex[i] * cosA;
-      int y1 = ey[i];
-      int x2 = ex[i+1] * cosA;
-      int y2 = ey[i+1];
-      display.drawLine(cx + x1, cy + y1, cx + x2, cy + y2, BLACK);
-    }
-
-    // 4. Draw chest stripes
-    display.drawLine(cx + (-2 * cosA), cy + 2, cx + (2 * cosA), cy + 2, BLACK);
-    display.drawLine(cx + (-2 * cosA), cy + 5, cx + (2 * cosA), cy + 5, BLACK);
-
+    // Draw the shield!
+    display.drawBitmap(shieldX, 0, shield_bitmap, shield_width, shield_height, BLACK);
     display.display();
-
-    // Spin the hologram forward.
-    rotAngle += 0.12; 
     
-    // Reset angle to prevent math overflow
-    if (rotAngle > 6.28318) {
-      rotAngle -= 6.28318;
+    // Update position
+    shieldX += shieldDir;
+    
+    // Bounce off the edges (Max X is 84 screen width - 48 image width = 36)
+    if (shieldX <= 0 || shieldX >= 36) {
+      shieldDir = -shieldDir;
     }
   }
 
-  // WAKE UP PROTOCOL
-  if (getEncoderDelta() != 0 || registeredTaps > 0 || longPress) {
+  // Wake up if the encoder is turned, clicked, or long pressed
+  if (encoderCount != lastEncoderCount || registeredTaps > 0 || longPress) {
     lastActivityTime = millis();
     encoderCount = 0;
     lastEncoderCount = 0;
@@ -888,15 +734,12 @@ void runScreensaver() {
   }
 }
 
-// ==========================================
-// OTA WEBSERVER MODE
-// ==========================================
 void runOtaMode() {
   if (!otaStarted) {
     display.clearDisplay();
     display.setCursor(0, 0);
     display.println("OTA MODE ON");
-    display.println("Open:");
+    display.println("Open Safari:");
     display.println(WiFi.localIP().toString());
     display.display();
 
@@ -942,7 +785,6 @@ void runOtaMode() {
 
   server.handleClient();
 
-  // Long press dial to stop the OTA server and exit mode
   if (longPress) {
     server.stop();
     otaStarted = false;
