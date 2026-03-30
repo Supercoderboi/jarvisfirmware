@@ -753,40 +753,83 @@ void runMusic() {
   }
 }
 
+// ==========================================
+// 3D ROTATING S.H.I.E.L.D. HOLOGRAM
+// ==========================================
 void runScreensaver() {
-  if (millis() - lastFrameTime > 200) { 
+  // Update every 40ms for a smooth 25 FPS rotation
+  if (millis() - lastFrameTime > 40) { 
     lastFrameTime = millis();
+    display.clearDisplay();
+
+    // The angle of rotation. Static so it remembers its position between frames.
+    static float rotAngle = 0; 
     
-    if (kreeLinesDrawn > 40) { 
-      display.clearDisplay();
-      kreeLinesDrawn = 0;
-      kreeX = random(10, 74);
-      kreeY = random(10, 38);
+    // The Cosine multiplier. This squashes the X axis from 1.0 to -1.0 to simulate 3D depth
+    float cosA = cos(rotAngle); 
+    
+    // Center of the Nokia 5110 screen
+    int cx = 42; 
+    int cy = 24; 
+
+    // 1. Draw the Spinning Outer Ring (Faceted for a high-tech wireframe look)
+    for (int i = 0; i < 360; i += 15) {
+      float rad1 = i * 0.0174533;       // Convert degrees to radians
+      float rad2 = (i + 15) * 0.0174533;
+
+      int x1 = 22 * cos(rad1);
+      int y1 = 22 * sin(rad1);
+      int x2 = 22 * cos(rad2);
+      int y2 = 22 * sin(rad2);
+
+      // Apply the 3D projection (multiply X by cosA)
+      display.drawLine(cx + (x1 * cosA), cy + y1, cx + (x2 * cosA), cy + y2, BLACK);
     }
 
-    int dirX = random(-1, 2) * 6; 
-    int dirY = random(-1, 2) * 6;
-    
-    int nextX = kreeX + dirX;
-    int nextY = kreeY + dirY;
-    
-    if (nextX <= 0 || nextX >= 84) nextX = kreeX - dirX;
-    if (nextY <= 0 || nextY >= 48) nextY = kreeY - dirY;
-    
-    display.drawLine(kreeX, kreeY, nextX, nextY, BLACK);
-    
-    if (random(10) > 6) {
-      display.drawCircle(nextX, nextY, random(1, 4), BLACK);
+    // 2. Draw the Spinning Inner Ring
+    for (int i = 0; i < 360; i += 30) {
+      float rad1 = i * 0.0174533;
+      float rad2 = (i + 30) * 0.0174533;
+
+      int x1 = 16 * cos(rad1);
+      int y1 = 16 * sin(rad1);
+      int x2 = 16 * cos(rad2);
+      int y2 = 16 * sin(rad2);
+
+      display.drawLine(cx + (x1 * cosA), cy + y1, cx + (x2 * cosA), cy + y2, BLACK);
     }
-    
-    kreeX = nextX;
-    kreeY = nextY;
-    kreeLinesDrawn++;
-    
+
+    // 3. Draw the S.H.I.E.L.D. Eagle (13 points mapped geometrically)
+    const int NUM_PTS = 13;
+    // Map out the left wing, down to the tail, and back up the right wing
+    int ex[NUM_PTS] = { 0, -5, -14, -6, -3, -4,  0,  4,  3,  6, 14,  5,  0};
+    int ey[NUM_PTS] = {-8, -8, -12,  2, -2, 10, 14, 10, -2,  2, -12, -8, -8};
+
+    for (int i = 0; i < NUM_PTS - 1; i++) {
+      int x1 = ex[i] * cosA;
+      int y1 = ey[i];
+      int x2 = ex[i+1] * cosA;
+      int y2 = ey[i+1];
+      display.drawLine(cx + x1, cy + y1, cx + x2, cy + y2, BLACK);
+    }
+
+    // 4. Draw the internal chest stripes of the Eagle
+    display.drawLine(cx + (-2 * cosA), cy + 2, cx + (2 * cosA), cy + 2, BLACK);
+    display.drawLine(cx + (-2 * cosA), cy + 5, cx + (2 * cosA), cy + 5, BLACK);
+
     display.display();
+
+    // Spin the hologram forward. (Increase this number to spin faster)
+    rotAngle += 0.12; 
+    
+    // Reset angle to prevent math overflow after running for hours
+    if (rotAngle > 6.28318) {
+      rotAngle -= 6.28318;
+    }
   }
 
-  if (encoderCount != lastEncoderCount || registeredTaps > 0 || longPress) {
+  // WAKE UP PROTOCOL
+  if (getEncoderDelta() != 0 || registeredTaps > 0 || longPress) {
     lastActivityTime = millis();
     encoderCount = 0;
     lastEncoderCount = 0;
