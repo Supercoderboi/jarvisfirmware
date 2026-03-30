@@ -791,3 +791,25 @@ void runOtaMode() {
     currentState = MENU;
   }
 }
+
+void runMusic() {
+  int delta = getEncoderDelta();
+
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setCursor(12, 16); 
+  display.print("MUSIC");
+  display.setTextSize(1); 
+  display.display();
+
+  if (delta > 0) bleKeyboard.write(KEY_MEDIA_VOLUME_UP);
+  if (delta < 0) bleKeyboard.write(KEY_MEDIA_VOLUME_DOWN);
+  
+  if (registeredTaps == 1) bleKeyboard.write(KEY_MEDIA_PLAY_PAUSE);
+  if (registeredTaps == 2) bleKeyboard.write(KEY_MEDIA_PREVIOUS_TRACK);
+  if (registeredTaps == 3) bleKeyboard.write(KEY_MEDIA_NEXT_TRACK);
+  
+  if (longPress) {
+    currentState = MENU;
+  }
+}
