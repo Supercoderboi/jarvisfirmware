@@ -879,7 +879,7 @@ void runScreensaver() {
   }
 
   // WAKE UP PROTOCOL
-  if (encoderDelta != 0 || registeredTaps > 0 || longPress) {
+  if (getEncoderDelta() != 0 || registeredTaps > 0 || longPress) {
     lastActivityTime = millis();
     encoderCount = 0;
     lastEncoderCount = 0;
