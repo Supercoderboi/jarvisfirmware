@@ -395,38 +395,58 @@ void runSettings() {
 }
 
 // ==========================================
-// LIVE API AUTOCOMPLETE FUNCTION (V9.1 FIX)
+// CONTEXTUAL API AUTOCOMPLETE FUNCTION
 // ==========================================
 void fetchPrediction(String input) {
-  if (input.length() == 0) {
+  // If empty or if we just typed a space, don't predict yet
+  if (input.length() == 0 || input.endsWith(" ")) {
     predictedWord = "";
     return;
   }
 
-  // 1. Isolate the current word being typed (ignore everything before the last space)
+  // 1. Extract the current word being typed
   int lastSpaceIndex = input.lastIndexOf(' ');
-  String currentWord = input;
-  if (lastSpaceIndex != -1) {
+  String currentWord = "";
+  String previousWord = "";
+
+  if (lastSpaceIndex == -1) {
+    // Only one word so far
+    currentWord = input;
+  } else {
     currentWord = input.substring(lastSpaceIndex + 1);
+
+    // 2. Extract the PREVIOUS word to give the API context
+    String temp = input.substring(0, lastSpaceIndex);
+    int secondToLastSpace = temp.lastIndexOf(' ');
+    if (secondToLastSpace == -1) {
+      previousWord = temp;
+    } else {
+      previousWord = temp.substring(secondToLastSpace + 1);
+    }
   }
 
-  // If the user just typed a space and hasn't started a new word, don't predict
   if (currentWord.length() == 0) {
     predictedWord = "";
     return;
   }
 
-  // Draw a quick "thinking" indicator
+  // "Thinking" indicator
   display.setCursor(75, 20);
   display.print("...");
   display.display();
 
   if (WiFi.status() == WL_CONNECTED) {
-    WiFiClient client; // FIX: Switched to standard WiFiClient (No SSL overhead)
+    WiFiClient client; 
     HTTPClient http;
     
-    // FIX: Using plain HTTP and only sending the currentWord
-    String url = "http://api.datamuse.com/sug?s=" + currentWord + "&max=1";
+    // 3. Build the smart query using 'sp' (spelled like) and 'lc' (left context)
+    String url = "http://api.datamuse.com/words?sp=" + currentWord + "*&md=f&max=1";
+    
+    // If we have a previous word, add it to the query for context
+    if (previousWord.length() > 0) {
+      url += "&lc=" + previousWord;
+    }
+
     http.begin(client, url);
     
     int httpCode = http.GET();
@@ -435,26 +455,20 @@ void fetchPrediction(String input) {
       StaticJsonDocument<256> doc;
       DeserializationError error = deserializeJson(doc, payload);
       
+      // Store the smartest contextual suggestion
       if (!error && doc.size() > 0) {
-        String suggestion = doc[0]["word"].as<String>();
-        suggestion.toUpperCase(); 
-        
-        // 2. Reconstruct the full phrase with the new prediction at the end
-        if (lastSpaceIndex != -1) {
-          predictedWord = input.substring(0, lastSpaceIndex + 1) + suggestion;
-        } else {
-          predictedWord = suggestion;
-        }
+        predictedWord = doc[0]["word"].as<String>();
+        predictedWord.toUpperCase(); 
       } else {
-        predictedWord = ""; // Clear if no match found
+        // If it can't find a contextual match, clear it
+        predictedWord = ""; 
       }
     } else {
-      predictedWord = ""; // Clear on HTTP error
+      predictedWord = ""; 
     }
     http.end();
   }
 }
-
 void runJarvis() {
   int delta = getEncoderDelta();
   int charsetLen = strlen(charset);
