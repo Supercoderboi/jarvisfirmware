@@ -1,5 +1,6 @@
 #include <WiFi.h>
 #include <HTTPClient.h> 
+#include <WiFiClientSecure.h> // NEW: Required for HTTPS API calls
 #include <ArduinoJson.h>
 #include <SPI.h>
 #include <Adafruit_GFX.h>
@@ -12,7 +13,7 @@
 #include <WebServer.h>
 #include <Update.h>
 
-// Power management headers to stop the 38W cable restart loop
+// Power management headers
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 
@@ -43,7 +44,7 @@ const char* WIFI_SSID = "Airtel_Ethria2.4";
 const char* WIFI_PASS = "PalmDale007";
 const char* JARVIS_URL = "http://jarvisep.pythonanywhere.com/command";
 
-const long GMT_OFFSET_SEC = 19800; // IST Timezone
+const long GMT_OFFSET_SEC = 19800; 
 const int DAYLIGHT_OFFSET_SEC = 0;
 
 // ==========================================
@@ -52,7 +53,7 @@ const int DAYLIGHT_OFFSET_SEC = 0;
 enum ScreenState { HOME, MENU, JARVIS, SENSORS, TIMER, MUSIC, SETTINGS, JARVIS_RESPONSE, OTA_UPDATE, TIMER_ALARM, SCREENSAVER };
 ScreenState currentState = HOME;
 
-int displayContrast = 55; // Global variable for screen contrast
+int displayContrast = 55;
 
 // Encoder Variables
 volatile int encoderCount = 0;
@@ -75,13 +76,14 @@ int menuIndex = 0;
 
 // Screensaver Variables
 unsigned long lastActivityTime = 0;
-const unsigned long SCREENSAVER_TIMEOUT = 60000; // 60 seconds
-int kreeDrops[14]; 
+const unsigned long SCREENSAVER_TIMEOUT = 60000; 
 unsigned long lastFrameTime = 0;
+int kreeX = 42;
+int kreeY = 24;
+int kreeLinesDrawn = 0;
 
 // ==========================================
-// J.A.R.V.I.S. AUTOFILL DICTIONARY
-// Stored in Flash Memory to prevent RAM crashes
+// J.A.R.V.I.S. AUTOFILL VARIABLES
 // ==========================================
 const char charset[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?<*>";
 int charIndex = 0;
@@ -90,18 +92,7 @@ String predictedWord = "";
 String jarvisReply = "";
 int jarvisScrollY = 0; 
 
-// You can safely expand this list to thousands of words. Keep it alphabetical for sanity.
-const int DICT_SIZE = 49;
-const char* const dictionary[DICT_SIZE] PROGMEM = {
-  "ABOUT", "ACTIVATE", "ALARM", "ANALYZE", "AUDIO", "BOOT", "CALCULATE", "CHECK", 
-  "CLEAR", "CLOSE", "CONNECT", "COULSON", "DATA", "DEACTIVATE", "DELETE", "DISABLE", 
-  "ENABLE", "ENCRYPT", "EXECUTE", "FIND", "HELP", "INITIATE", "JARVIS", "LIGHTS", 
-  "LOCATE", "LOCK", "MUSIC", "NETWORK", "OFF", "ON", "OPEN", "OVERRIDE", "PAUSE", 
-  "PLAY", "POWER", "REBOOT", "REPORT", "RUN", "SCAN", "SHIELD", "STATUS", "STOP", 
-  "SYSTEM", "TIME", "WEATHER","S.H.I.E.L.D","SHIELD","PHILL COULSON",
-};
-
-// UPGRADED Timer Variables
+// Timer Variables
 int timerHours = 0;
 int timerMinutes = 0;
 int timerSeconds = 0;
@@ -137,11 +128,11 @@ void IRAM_ATTR readEncoder() {
   if (encval > 3) {
     encoderCount++;
     encval = 0;
-    lastActivityTime = millis(); // Wake up / reset screensaver
+    lastActivityTime = millis(); 
   } else if (encval < -3) {
     encoderCount--;
     encval = 0;
-    lastActivityTime = millis(); // Wake up / reset screensaver
+    lastActivityTime = millis(); 
   }
 }
 
@@ -200,13 +191,11 @@ void setup() {
 void loop() {
   handleButton();
 
-  // BACKGROUND TIMER CHECK
   if (timerRunning && millis() >= timerEndTime) {
     timerRunning = false;          
     currentState = TIMER_ALARM;    
   }
 
-  // SCREENSAVER TRIGGER LOGIC
   if (millis() - lastActivityTime > SCREENSAVER_TIMEOUT && 
       currentState != SCREENSAVER && 
       currentState != TIMER_ALARM &&
@@ -214,7 +203,9 @@ void loop() {
     
     currentState = SCREENSAVER;
     display.clearDisplay();
-    for(int i = 0; i < 14; i++) kreeDrops[i] = random(-15, 0); 
+    kreeX = random(10, 74);
+    kreeY = random(10, 38);
+    kreeLinesDrawn = 0;
   }
 
   switch (currentState) {
@@ -248,7 +239,7 @@ void handleButton() {
   
   if (btnState && !lastBtnState) {
     btnPressTime = now;
-    lastActivityTime = now; // Wake up / reset screensaver
+    lastActivityTime = now;
   }
   
   if (!btnState && lastBtnState) {
@@ -259,7 +250,7 @@ void handleButton() {
     } else if (duration >= 600) {
       longPress = true;
     }
-    lastActivityTime = now; // Wake up / reset screensaver
+    lastActivityTime = now; 
   }
 
   if (tapCount > 0 && (now - btnReleaseTime) > TAP_TIMEOUT) {
@@ -329,16 +320,30 @@ void runMenu() {
   display.setCursor(0, 0);
   display.println("--- MENU ---");
   
-  for (int i = 0; i < numMenuItems; i++) {
-    if (i == menuIndex) display.print(">");
+  int maxVisible = 4;
+  int startIndex = menuIndex - 1; 
+  if (startIndex < 0) startIndex = 0;
+  if (startIndex > numMenuItems - maxVisible) startIndex = numMenuItems - maxVisible;
+
+  for (int i = 0; i < maxVisible; i++) {
+    int currentI = startIndex + i;
+    if (currentI >= numMenuItems) break;
+    
+    display.setCursor(0, 10 + (i * 9)); 
+    if (currentI == menuIndex) display.print(">");
     else display.print(" ");
     
-    if (i == menuIndex && strlen(menuItems[i]) > 10) {
-      display.println(String(menuItems[i]).substring(0, 10));
+    if (currentI == menuIndex && strlen(menuItems[currentI]) > 12) {
+      display.print(String(menuItems[currentI]).substring(0, 12));
     } else {
-      display.println(menuItems[i]);
+      display.print(menuItems[currentI]);
     }
   }
+
+  display.drawLine(82, 10, 82, 48, BLACK); 
+  int barY = map(menuIndex, 0, numMenuItems - 1, 10, 40); 
+  display.fillRect(80, barY, 4, 8, BLACK); 
+
   display.display();
 
   if (registeredTaps == 1) {
@@ -359,12 +364,11 @@ void runMenu() {
   }
 }
 
-// NEW: SETTINGS (CONTRAST)
 void runSettings() {
   int delta = getEncoderDelta();
   
   if (delta != 0) {
-    displayContrast += (delta * 2); // Change by 2 to make scrolling faster
+    displayContrast += (delta * 2); 
     if (displayContrast < 0) displayContrast = 0;
     if (displayContrast > 100) displayContrast = 100;
     display.setContrast(displayContrast);
@@ -390,24 +394,49 @@ void runSettings() {
   }
 }
 
-// AUTOCOMPLETE INCLUDED
+// ==========================================
+// LIVE API AUTOCOMPLETE FUNCTION
+// ==========================================
+void fetchPrediction(String input) {
+  if (input.length() == 0) {
+    predictedWord = "";
+    return;
+  }
+
+  // Draw a quick "thinking" indicator
+  display.setCursor(75, 20);
+  display.print("...");
+  display.display();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFiClientSecure client;
+    client.setInsecure(); // Bypass SSL verification for Datamuse
+    HTTPClient http;
+    
+    // Datamuse API: Suggest words starting with 'input', max 1 result
+    String url = "https://api.datamuse.com/sug?s=" + input + "&max=1";
+    http.begin(client, url);
+    
+    int httpCode = http.GET();
+    if (httpCode == HTTP_CODE_OK) {
+      String payload = http.getString();
+      StaticJsonDocument<256> doc;
+      DeserializationError error = deserializeJson(doc, payload);
+      
+      if (!error && doc.size() > 0) {
+        predictedWord = doc[0]["word"].as<String>();
+        predictedWord.toUpperCase(); 
+      } else {
+        predictedWord = "";
+      }
+    }
+    http.end();
+  }
+}
+
 void runJarvis() {
   int delta = getEncoderDelta();
   int charsetLen = strlen(charset);
-  
-  // Calculate the Predicted Word based on PROGMEM dictionary
-  predictedWord = "";
-  if (jarvisMessage.length() > 0) {
-    String upperInput = jarvisMessage;
-    upperInput.toUpperCase(); // Ensure matching works regardless of case
-    for (int i = 0; i < DICT_SIZE; i++) {
-      String dictWord = String(dictionary[i]);
-      if (dictWord.startsWith(upperInput)) {
-        predictedWord = dictWord;
-        break;
-      }
-    }
-  }
 
   if (delta > 0) charIndex = (charIndex + 1) % charsetLen;
   if (delta < 0) {
@@ -419,14 +448,12 @@ void runJarvis() {
   display.setCursor(0, 0);
   display.println("JARVIS>");
   
-  // Display Current Input
   if (jarvisMessage.length() > 14) {
     display.println(jarvisMessage.substring(jarvisMessage.length() - 14));
   } else {
     display.println(jarvisMessage);
   }
 
-  // Display Suggestion faintly (with ~)
   display.setCursor(0, 20);
   if (predictedWord != "") {
     display.print("~");
@@ -442,20 +469,30 @@ void runJarvis() {
 
   if (registeredTaps == 1) {
     if (selectedChar == '<') {
-      if (jarvisMessage.length() > 0) jarvisMessage.remove(jarvisMessage.length() - 1); // Delete
+      if (jarvisMessage.length() > 0) {
+        jarvisMessage.remove(jarvisMessage.length() - 1); 
+        fetchPrediction(jarvisMessage); // Fetch new prediction on delete
+      }
     } else if (selectedChar == '*') {
-      if (predictedWord != "") jarvisMessage = predictedWord; // Autofill!
+      if (predictedWord != "") {
+        jarvisMessage = predictedWord; // Autofill!
+        predictedWord = ""; // Clear prediction
+      }
     } else if (selectedChar == '>') {
-       sendToJarvis(jarvisMessage); // Execute/Send
+       sendToJarvis(jarvisMessage); 
        jarvisMessage = ""; 
+       predictedWord = "";
        currentState = JARVIS_RESPONSE;
     } else {
-      jarvisMessage += selectedChar; // Type character
+      jarvisMessage += selectedChar; 
+      // Replace spaces with standard URL encoding internally if you want to search phrases,
+      // but Datamuse suggestions are mainly single words based on prefix.
+      fetchPrediction(jarvisMessage); // Fetch prediction on type
     }
   }
   
   if (longPress) {
-    currentState = MENU; // Exit back to menu
+    currentState = MENU; 
   }
 }
 
@@ -682,28 +719,38 @@ void runMusic() {
 }
 
 void runScreensaver() {
-  if (millis() - lastFrameTime > 80) { 
+  if (millis() - lastFrameTime > 200) { 
     lastFrameTime = millis();
-    for (int i = 0; i < 14; i++) {
-      int tailY = (kreeDrops[i] - 4) * 8;
-      if (tailY >= 0) display.fillRect(i * 6, tailY, 6, 8, WHITE); 
-      
-      int headY = kreeDrops[i] * 8;
-      if (headY >= 0 && headY < 48) {
-        display.setCursor(i * 6, headY);
-        char c = random(33, 90); 
-        display.print(c);
-      }
-      kreeDrops[i]++;
-      if (kreeDrops[i] * 8 > 48 + random(0, 50)) {
-        kreeDrops[i] = random(-10, 0);
-        display.fillRect(i * 6, 0, 6, 48, WHITE);
-      }
+    
+    if (kreeLinesDrawn > 40) { 
+      display.clearDisplay();
+      kreeLinesDrawn = 0;
+      kreeX = random(10, 74);
+      kreeY = random(10, 38);
     }
+
+    int dirX = random(-1, 2) * 6; 
+    int dirY = random(-1, 2) * 6;
+    
+    int nextX = kreeX + dirX;
+    int nextY = kreeY + dirY;
+    
+    if (nextX <= 0 || nextX >= 84) nextX = kreeX - dirX;
+    if (nextY <= 0 || nextY >= 48) nextY = kreeY - dirY;
+    
+    display.drawLine(kreeX, kreeY, nextX, nextY, BLACK);
+    
+    if (random(10) > 6) {
+      display.drawCircle(nextX, nextY, random(1, 4), BLACK);
+    }
+    
+    kreeX = nextX;
+    kreeY = nextY;
+    kreeLinesDrawn++;
+    
     display.display();
   }
 
-  // WAKE UP
   if (encoderCount != lastEncoderCount || registeredTaps > 0 || longPress) {
     lastActivityTime = millis();
     encoderCount = 0;
