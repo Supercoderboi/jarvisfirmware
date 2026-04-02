@@ -221,7 +221,8 @@ void loop() {
   if (millis() - lastActivityTime > SCREENSAVER_TIMEOUT && 
       currentState != SCREENSAVER && 
       currentState != TIMER_ALARM &&
-      currentState != OTA_UPDATE) { 
+      currentState != OTA_UPDATE &&
+      currentState != MUSIC) { // <-- Added this line
     
     currentState = SCREENSAVER;
     display.clearDisplay();
