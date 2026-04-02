@@ -714,8 +714,8 @@ void runTimerAlarm() {
 
 void runScreensaver() {
   display.clearDisplay();
-  // Draw the static emblem exactly in the center
-  display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, BLACK);
+ // Draw the static emblem exactly in the center
+  display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, WHITE, BLACK);
   display.display();
 
   // Wake up immediately if the encoder is turned, clicked, or long pressed
