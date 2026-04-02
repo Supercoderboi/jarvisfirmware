@@ -96,8 +96,8 @@ bool longPress = false;
 const unsigned long TAP_TIMEOUT = 350; 
 
 // Menu Variables
-const char* menuItems[] = {"Jarvis", "Sensors", "Timer", "Music", "Social", "Camera", "Assistant", "Lock Screen", "Settings", "System Update"};
-const int numMenuItems = 10;
+const char* menuItems[] = {"Jarvis", "Sensors", "Timer", "Music", "Social", "Camera", "Assistant", "Settings", "System Update"};
+const int numMenuItems = 9;
 int menuIndex = 0;
 
 // Screensaver Variables
@@ -368,7 +368,7 @@ void runMenu() {
 
   display.display();
 
-  if (registeredTaps == 1) {
+if (registeredTaps == 1) {
     encoderCount = 0;
     lastEncoderCount = 0;
     if (menuIndex == 0) currentState = JARVIS;
@@ -378,17 +378,12 @@ void runMenu() {
     else if (menuIndex == 4) currentState = SOCIAL;
     else if (menuIndex == 5) currentState = CAMERA;
     else if (menuIndex == 6) { 
-      // Try to trigger Voice Assistant
+      // Trigger Voice Assistant
       bleKeyboard.write(KEY_MEDIA_WWW_SEARCH); 
       currentState = HOME;
     }
-    else if (menuIndex == 7) { 
-      // Lock Screen command (Usually works on Android/Mac, iOS varies)
-      bleKeyboard.write(KEY_MEDIA_SLEEP); 
-      currentState = HOME;
-    }
-    else if (menuIndex == 8) currentState = SETTINGS;
-    else if (menuIndex == 9) currentState = OTA_UPDATE;
+    else if (menuIndex == 7) currentState = SETTINGS;
+    else if (menuIndex == 8) currentState = OTA_UPDATE;
   }
   
   if (longPress) {
