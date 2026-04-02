@@ -76,7 +76,7 @@ const uint8_t PROGMEM shield_bitmap[] = {
 // ==========================================
 // STATE MACHINE & UI VARIABLES
 // ==========================================
-enum ScreenState { HOME, MENU, JARVIS, SENSORS, TIMER, MUSIC, SETTINGS, JARVIS_RESPONSE, OTA_UPDATE, TIMER_ALARM, SCREENSAVER };
+enum ScreenState { HOME, MENU, JARVIS, SENSORS, TIMER, MUSIC, SOCIAL, CAMERA, SETTINGS, JARVIS_RESPONSE, OTA_UPDATE, TIMER_ALARM, SCREENSAVER };
 ScreenState currentState = HOME;
 
 int displayContrast = 55;
@@ -96,8 +96,8 @@ bool longPress = false;
 const unsigned long TAP_TIMEOUT = 350; 
 
 // Menu Variables
-const char* menuItems[] = {"Jarvis", "Sensors", "Timer", "Music", "Settings", "System Update"};
-const int numMenuItems = 6;
+const char* menuItems[] = {"Jarvis", "Sensors", "Timer", "Music", "Social", "Camera", "Assistant", "Lock Screen", "Settings", "System Update"};
+const int numMenuItems = 10;
 int menuIndex = 0;
 
 // Screensaver Variables
@@ -236,6 +236,8 @@ void loop() {
     case SENSORS:         runSensors(); break;
     case TIMER:           runTimer(); break;
     case MUSIC:           runMusic(); break;
+    case SOCIAL:          runSocial(); break; // <-- NEW
+    case CAMERA:          runCamera(); break; // <-- NEW
     case SETTINGS:        runSettings(); break;
     case OTA_UPDATE:      runOtaMode(); break;
     case TIMER_ALARM:     runTimerAlarm(); break;
@@ -373,8 +375,20 @@ void runMenu() {
     else if (menuIndex == 1) currentState = SENSORS;
     else if (menuIndex == 2) currentState = TIMER;
     else if (menuIndex == 3) currentState = MUSIC;
-    else if (menuIndex == 4) currentState = SETTINGS;
-    else if (menuIndex == 5) currentState = OTA_UPDATE;
+    else if (menuIndex == 4) currentState = SOCIAL;
+    else if (menuIndex == 5) currentState = CAMERA;
+    else if (menuIndex == 6) { 
+      // Try to trigger Voice Assistant
+      bleKeyboard.write(KEY_MEDIA_WWW_SEARCH); 
+      currentState = HOME;
+    }
+    else if (menuIndex == 7) { 
+      // Lock Screen command (Usually works on Android/Mac, iOS varies)
+      bleKeyboard.write(KEY_MEDIA_SLEEP); 
+      currentState = HOME;
+    }
+    else if (menuIndex == 8) currentState = SETTINGS;
+    else if (menuIndex == 9) currentState = OTA_UPDATE;
   }
   
   if (longPress) {
@@ -785,7 +799,51 @@ void runOtaMode() {
     currentState = MENU;
   }
 }
+void runSocial() {
+  int delta = getEncoderDelta();
 
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(15, 0);
+  display.println("- SOCIAL -");
+  display.setCursor(0, 15);
+  display.println("Turn = Scroll");
+  display.println("Tap  = Pause");
+  display.println("(Hold to Exit)");
+  display.display();
+
+  // Scroll up/down using arrow keys
+  if (delta > 0) bleKeyboard.write(KEY_DOWN_ARROW); 
+  if (delta < 0) bleKeyboard.write(KEY_UP_ARROW);   
+  
+  // Tap to pause/play the video
+  if (registeredTaps == 1) bleKeyboard.write(' ');
+  
+  if (longPress) {
+    currentState = MENU;
+  }
+}
+
+void runCamera() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(15, 0);
+  display.println("- CAMERA -");
+  display.setCursor(0, 20);
+  display.println("Tap to Snap!");
+  display.setCursor(0, 38);
+  display.println("(Hold to Exit)");
+  display.display();
+
+  // Volume Up is the universal camera shutter button
+  if (registeredTaps > 0) {
+    bleKeyboard.write(KEY_MEDIA_VOLUME_UP);
+  }
+  
+  if (longPress) {
+    currentState = MENU;
+  }
+}
 void runMusic() {
   int delta = getEncoderDelta();
 
