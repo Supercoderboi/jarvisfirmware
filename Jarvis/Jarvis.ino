@@ -218,11 +218,12 @@ void loop() {
     currentState = TIMER_ALARM;    
   }
 
-  if (millis() - lastActivityTime > SCREENSAVER_TIMEOUT && 
+ if (millis() - lastActivityTime > SCREENSAVER_TIMEOUT && 
       currentState != SCREENSAVER && 
       currentState != TIMER_ALARM &&
       currentState != OTA_UPDATE &&
-      currentState != MUSIC) { 
+      currentState != MUSIC &&
+      currentState != SOCIAL) { // <-- Added SOCIAL right here
     
     currentState = SCREENSAVER;
     display.clearDisplay();
