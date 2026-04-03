@@ -206,7 +206,7 @@ void setup() {
   display.setTextColor(BLACK);
 
   // --- 1. SHOW BOOT LOGO IMMEDIATELY ---
-  // Using WHITE for background and BLACK for foreground fixes the inversion
+  // Draw the static emblem exactly in the center
   display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, WHITE, BLACK);
   display.display();
 
@@ -302,6 +302,7 @@ void verifyClearanceLevel() {
         if (enteredPIN == correctPIN) {
           // CORRECT PIN
           display.clearDisplay();
+          // Draw the static emblem exactly in the center
           display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, WHITE, BLACK);
           display.display();
           delay(1500);
@@ -310,6 +311,7 @@ void verifyClearanceLevel() {
           // WRONG PIN: LOCKDOWN
           while (true) {
             display.clearDisplay();
+            // Draw the static emblem exactly in the center
             display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, WHITE, BLACK);
             display.display();
             delay(2000);
@@ -1028,6 +1030,7 @@ void runCamera() {
 
 void runScreensaver() {
   display.clearDisplay();
+  // Draw the static emblem exactly in the center
   display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, WHITE, BLACK);
   display.display();
 
