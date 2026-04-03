@@ -1,6 +1,6 @@
 #include <WiFi.h>
 #include <HTTPClient.h> 
-#include <WiFiClientSecure.h> // Required for HTTPS API calls
+#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <SPI.h>
 #include <Adafruit_GFX.h>
@@ -8,6 +8,7 @@
 #include "DHT.h"
 #include <BleKeyboard.h>
 #include <time.h>
+#include <Preferences.h> // <-- NEW: Memory saving library
 
 // Web OTA Headers
 #include <WebServer.h>
@@ -39,9 +40,10 @@
 Adafruit_PCD8544 display = Adafruit_PCD8544(NOKIA_CLK, NOKIA_DIN, NOKIA_DC, NOKIA_CE, NOKIA_RST);
 DHT dht(DHTPIN, DHTTYPE);
 BleKeyboard bleKeyboard("Jarvis Remote", "ESP32", 100);
+Preferences preferences; // Memory Object
 
-const char* WIFI_SSID = "Airtel_Ethria2.4";
-const char* WIFI_PASS = "PalmDale007";
+String wifi_ssid = "Airtel_Ethria2.4";
+String wifi_pass = "PalmDale007";
 const char* JARVIS_URL = "http://jarvisep.pythonanywhere.com/command";
 
 const long GMT_OFFSET_SEC = 19800; 
@@ -54,29 +56,29 @@ const uint8_t shield_width    = 48;
 const uint8_t shield_height   = 48;
 const uint8_t PROGMEM shield_bitmap[] = { 
   0xff, 0xff, 0xf0, 0x0f, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0xff, 0xfc, 0x01, 0x80, 
-	0x3f, 0xff, 0xff, 0xf0, 0x7f, 0xfe, 0x0f, 0xff, 0xff, 0xc1, 0xff, 0xff, 0x83, 0xff, 0xff, 0x87, 
-	0xff, 0xff, 0xe1, 0xff, 0xff, 0x1f, 0xff, 0xff, 0xf0, 0xff, 0xfe, 0x3f, 0xff, 0xff, 0xfc, 0x7f, 
-	0xfc, 0x7f, 0xff, 0xff, 0xfe, 0x3f, 0xf8, 0xbf, 0xfe, 0x07, 0xfd, 0x1f, 0xf1, 0x9f, 0xfc, 0x0f, 
-	0xf9, 0x8f, 0xf3, 0x07, 0xfc, 0x1f, 0xe0, 0xcf, 0xe2, 0x03, 0xf8, 0x1f, 0xc0, 0x47, 0xe6, 0x01, 
-	0xf8, 0x1f, 0x80, 0x67, 0xcf, 0x00, 0xf0, 0x0f, 0x00, 0xe3, 0xc9, 0x80, 0x30, 0x0c, 0x01, 0x93, 
-	0x88, 0xc0, 0x00, 0x00, 0x03, 0x11, 0x98, 0x40, 0x00, 0x00, 0x06, 0x19, 0x90, 0x60, 0x00, 0x00, 
-	0x04, 0x09, 0xb0, 0xf0, 0x00, 0x00, 0x0e, 0x09, 0x31, 0x98, 0x00, 0x00, 0x1b, 0x08, 0x33, 0x0c, 
-	0x00, 0x00, 0x30, 0x88, 0x36, 0x06, 0x00, 0x00, 0x60, 0x64, 0x3c, 0x07, 0x00, 0x00, 0xe0, 0x34, 
-	0x38, 0x0d, 0x80, 0x01, 0xa0, 0x1c, 0x30, 0x18, 0xc0, 0x03, 0x18, 0x08, 0x30, 0x30, 0xc0, 0x03, 
-	0x08, 0x00, 0x10, 0x70, 0x60, 0x06, 0x04, 0x08, 0x90, 0xc0, 0x70, 0x0e, 0x02, 0x09, 0x91, 0xc0, 
-	0xf8, 0x1f, 0x03, 0x09, 0x9b, 0x80, 0xe4, 0x27, 0x01, 0xc9, 0x8e, 0x01, 0xc2, 0x43, 0x80, 0x51, 
-	0xcc, 0x03, 0xc1, 0x83, 0xc0, 0x73, 0xc4, 0x07, 0x80, 0x01, 0xe0, 0x33, 0xe4, 0x0f, 0x00, 0x00, 
-	0xf0, 0x27, 0xe2, 0x0f, 0x00, 0x00, 0xf0, 0x47, 0xf3, 0x1e, 0x00, 0x00, 0x78, 0xcf, 0xf1, 0x3c, 
-	0x00, 0x00, 0x3c, 0x8f, 0xf8, 0xfc, 0x00, 0x00, 0x3f, 0x1f, 0xfc, 0x78, 0x00, 0x00, 0x1e, 0x3f, 
-	0xfe, 0x30, 0x00, 0x00, 0x0c, 0x7f, 0xff, 0x18, 0x00, 0x00, 0x18, 0xff, 0xff, 0x86, 0x00, 0x00, 
-	0x61, 0xff, 0xff, 0xc1, 0x80, 0x01, 0x83, 0xff, 0xff, 0xf0, 0x78, 0x1e, 0x0f, 0xff, 0xff, 0xfc, 
-	0x03, 0xc0, 0x3f, 0xff, 0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xf0, 0x0f, 0xff, 0xff
+  0x3f, 0xff, 0xff, 0xf0, 0x7f, 0xfe, 0x0f, 0xff, 0xff, 0xc1, 0xff, 0xff, 0x83, 0xff, 0xff, 0x87, 
+  0xff, 0xff, 0xe1, 0xff, 0xff, 0x1f, 0xff, 0xff, 0xf0, 0xff, 0xfe, 0x3f, 0xff, 0xff, 0xfc, 0x7f, 
+  0xfc, 0x7f, 0xff, 0xff, 0xfe, 0x3f, 0xf8, 0xbf, 0xfe, 0x07, 0xfd, 0x1f, 0xf1, 0x9f, 0xfc, 0x0f, 
+  0xf9, 0x8f, 0xf3, 0x07, 0xfc, 0x1f, 0xe0, 0xcf, 0xe2, 0x03, 0xf8, 0x1f, 0xc0, 0x47, 0xe6, 0x01, 
+  0xf8, 0x1f, 0x80, 0x67, 0xcf, 0x00, 0xf0, 0x0f, 0x00, 0xe3, 0xc9, 0x80, 0x30, 0x0c, 0x01, 0x93, 
+  0x88, 0xc0, 0x00, 0x00, 0x03, 0x11, 0x98, 0x40, 0x00, 0x00, 0x06, 0x19, 0x90, 0x60, 0x00, 0x00, 
+  0x04, 0x09, 0xb0, 0xf0, 0x00, 0x00, 0x0e, 0x09, 0x31, 0x98, 0x00, 0x00, 0x1b, 0x08, 0x33, 0x0c, 
+  0x00, 0x00, 0x30, 0x88, 0x36, 0x06, 0x00, 0x00, 0x60, 0x64, 0x3c, 0x07, 0x00, 0x00, 0xe0, 0x34, 
+  0x38, 0x0d, 0x80, 0x01, 0xa0, 0x1c, 0x30, 0x18, 0xc0, 0x03, 0x18, 0x08, 0x30, 0x30, 0xc0, 0x03, 
+  0x08, 0x00, 0x10, 0x70, 0x60, 0x06, 0x04, 0x08, 0x90, 0xc0, 0x70, 0x0e, 0x02, 0x09, 0x91, 0xc0, 
+  0xf8, 0x1f, 0x03, 0x09, 0x9b, 0x80, 0xe4, 0x27, 0x01, 0xc9, 0x8e, 0x01, 0xc2, 0x43, 0x80, 0x51, 
+  0xcc, 0x03, 0xc1, 0x83, 0xc0, 0x73, 0xc4, 0x07, 0x80, 0x01, 0xe0, 0x33, 0xe4, 0x0f, 0x00, 0x00, 
+  0xf0, 0x27, 0xe2, 0x0f, 0x00, 0x00, 0xf0, 0x47, 0xf3, 0x1e, 0x00, 0x00, 0x78, 0xcf, 0xf1, 0x3c, 
+  0x00, 0x00, 0x3c, 0x8f, 0xf8, 0xfc, 0x00, 0x00, 0x3f, 0x1f, 0xfc, 0x78, 0x00, 0x00, 0x1e, 0x3f, 
+  0xfe, 0x30, 0x00, 0x00, 0x0c, 0x7f, 0xff, 0x18, 0x00, 0x00, 0x18, 0xff, 0xff, 0x86, 0x00, 0x00, 
+  0x61, 0xff, 0xff, 0xc1, 0x80, 0x01, 0x83, 0xff, 0xff, 0xf0, 0x78, 0x1e, 0x0f, 0xff, 0xff, 0xfc, 
+  0x03, 0xc0, 0x3f, 0xff, 0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xf0, 0x0f, 0xff, 0xff
 };
 
 // ==========================================
 // STATE MACHINE & UI VARIABLES
 // ==========================================
-enum ScreenState { HOME, MENU, JARVIS, SENSORS, TIMER, MUSIC, SOCIAL, CAMERA, SETTINGS, JARVIS_RESPONSE, OTA_UPDATE, TIMER_ALARM, SCREENSAVER };
+enum ScreenState { HOME, MENU, JARVIS, SENSORS, TIMER, MUSIC, SOCIAL, CAMERA, SETTINGS, SETTINGS_CONTRAST, SETTINGS_WIFI_SSID, SETTINGS_WIFI_PASS, JARVIS_RESPONSE, OTA_UPDATE, TIMER_ALARM, SCREENSAVER };
 ScreenState currentState = HOME;
 
 int displayContrast = 55;
@@ -100,12 +102,17 @@ const char* menuItems[] = {"Jarvis", "Sensors", "Timer", "Music", "Social", "Cam
 const int numMenuItems = 9;
 int menuIndex = 0;
 
+// Settings Sub-Menu Variables
+const char* settingsItems[] = {"Contrast", "WiFi SSID", "WiFi Pass", "Back"};
+const int numSettingsItems = 4;
+int settingsIndex = 0;
+
 // Screensaver Variables
 unsigned long lastActivityTime = 0;
 const unsigned long SCREENSAVER_TIMEOUT = 60000; 
 
 // ==========================================
-// J.A.R.V.I.S. AUTOFILL VARIABLES
+// TYPING AUTOFILL & WIFI VARIABLES
 // ==========================================
 const char charset[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?<*>";
 int charIndex = 0;
@@ -113,6 +120,7 @@ String jarvisMessage = "";
 String predictedWord = "";
 String jarvisReply = "";
 int jarvisScrollY = 0; 
+String tempTypingString = ""; // Used for WiFi input
 
 // Timer Variables
 int timerHours = 0;
@@ -166,6 +174,12 @@ void setup() {
   
   Serial.begin(115200);
 
+  // Initialize NVS Memory Vault
+  preferences.begin("jarvis", false);
+  displayContrast = preferences.getInt("contrast", 55); 
+  wifi_ssid = preferences.getString("ssid", "Airtel_Ethria2.4");
+  wifi_pass = preferences.getString("pass", "PalmDale007");
+
   pinMode(ENC_CLK, INPUT_PULLUP);
   pinMode(ENC_DT, INPUT_PULLUP);
   pinMode(ENC_SW, INPUT_PULLUP);
@@ -183,24 +197,38 @@ void setup() {
 
   display.setCursor(0, 0);
   display.println("Booting...");
-  display.println("Connecting WiFi");
+  display.println("Connecting:");
+  display.println(wifi_ssid);
   display.display();
   
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  while (WiFi.status() != WL_CONNECTED) {
+  WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
+  
+  int wifiAttempts = 0;
+  // Try to connect for 10 seconds. If it fails, boot into UI so you can edit the WiFi.
+  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 20) {
     delay(500);
     display.print(".");
     display.display();
+    wifiAttempts++;
   }
 
   display.clearDisplay();
-  display.println("Syncing Time...");
-  display.display();
-  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, "pool.ntp.org");
-  
-  struct tm timeinfo;
-  while (!getLocalTime(&timeinfo)) {
-    delay(500);
+  if (WiFi.status() == WL_CONNECTED) {
+    display.println("Syncing Time...");
+    display.display();
+    configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, "pool.ntp.org");
+    
+    struct tm timeinfo;
+    int ntpAttempts = 0;
+    while (!getLocalTime(&timeinfo) && ntpAttempts < 10) {
+      delay(500);
+      ntpAttempts++;
+    }
+  } else {
+    display.println("WiFi Failed!");
+    display.println("Go to Settings");
+    display.display();
+    delay(2000);
   }
 
   encoderCount = 0; 
@@ -218,31 +246,35 @@ void loop() {
     currentState = TIMER_ALARM;    
   }
 
- if (millis() - lastActivityTime > SCREENSAVER_TIMEOUT && 
+  // Screensaver check (Stay awake during SOCIAL and MUSIC menus)
+  if (millis() - lastActivityTime > SCREENSAVER_TIMEOUT && 
       currentState != SCREENSAVER && 
       currentState != TIMER_ALARM &&
       currentState != OTA_UPDATE &&
       currentState != MUSIC &&
-      currentState != SOCIAL) { // <-- Added SOCIAL right here
+      currentState != SOCIAL) { 
     
     currentState = SCREENSAVER;
     display.clearDisplay();
   }
 
   switch (currentState) {
-    case HOME:            runHome(); break;
-    case MENU:            runMenu(); break;
-    case JARVIS:          runJarvis(); break;
-    case JARVIS_RESPONSE: runJarvisResponse(); break;
-    case SENSORS:         runSensors(); break;
-    case TIMER:           runTimer(); break;
-    case MUSIC:           runMusic(); break;
-    case SOCIAL:          runSocial(); break; // <-- NEW
-    case CAMERA:          runCamera(); break; // <-- NEW
-    case SETTINGS:        runSettings(); break;
-    case OTA_UPDATE:      runOtaMode(); break;
-    case TIMER_ALARM:     runTimerAlarm(); break;
-    case SCREENSAVER:     runScreensaver(); break;
+    case HOME:                runHome(); break;
+    case MENU:                runMenu(); break;
+    case JARVIS:              runJarvis(); break;
+    case JARVIS_RESPONSE:     runJarvisResponse(); break;
+    case SENSORS:             runSensors(); break;
+    case TIMER:               runTimer(); break;
+    case MUSIC:               runMusic(); break;
+    case SOCIAL:              runSocial(); break;
+    case CAMERA:              runCamera(); break;
+    case SETTINGS:            runSettings(); break;
+    case SETTINGS_CONTRAST:   runSettingsContrast(); break;
+    case SETTINGS_WIFI_SSID:  runSettingsWifiSsid(); break;
+    case SETTINGS_WIFI_PASS:  runSettingsWifiPass(); break;
+    case OTA_UPDATE:          runOtaMode(); break;
+    case TIMER_ALARM:         runTimerAlarm(); break;
+    case SCREENSAVER:         runScreensaver(); break;
   }
 
   registeredTaps = 0;
@@ -321,6 +353,9 @@ void runHome() {
     
     display.setCursor(dateX, 31);
     display.print(dateStr);
+  } else {
+    display.setCursor(0, 10);
+    display.println("No WiFi / Time");
   }
   display.display();
 
@@ -369,7 +404,7 @@ void runMenu() {
 
   display.display();
 
-if (registeredTaps == 1) {
+  if (registeredTaps == 1) {
     encoderCount = 0;
     lastEncoderCount = 0;
     if (menuIndex == 0) currentState = JARVIS;
@@ -379,7 +414,6 @@ if (registeredTaps == 1) {
     else if (menuIndex == 4) currentState = SOCIAL;
     else if (menuIndex == 5) currentState = CAMERA;
     else if (menuIndex == 6) { 
-      // Trigger Voice Assistant
       bleKeyboard.write(KEY_MEDIA_WWW_SEARCH); 
       currentState = HOME;
     }
@@ -394,7 +428,60 @@ if (registeredTaps == 1) {
   }
 }
 
+// ==========================================
+// SETTINGS MENU & WIFI INPUT
+// ==========================================
 void runSettings() {
+  int delta = getEncoderDelta();
+  if (delta > 0) settingsIndex = (settingsIndex + 1) % numSettingsItems;
+  if (delta < 0) {
+    settingsIndex = (settingsIndex - 1);
+    if (settingsIndex < 0) settingsIndex = numSettingsItems - 1;
+  }
+
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println("- SETTINGS -");
+  
+  int maxVisible = 3;
+  int startIndex = settingsIndex - 1;
+  if (startIndex < 0) startIndex = 0;
+  if (startIndex > numSettingsItems - maxVisible) startIndex = numSettingsItems - maxVisible;
+
+  for (int i = 0; i < maxVisible; i++) {
+    int currentI = startIndex + i;
+    if (currentI >= numSettingsItems) break;
+
+    display.setCursor(0, 15 + (i * 10));
+    if (currentI == settingsIndex) display.print(">");
+    else display.print(" ");
+    display.print(settingsItems[currentI]);
+  }
+  display.display();
+
+  if (registeredTaps == 1) {
+    encoderCount = 0;
+    lastEncoderCount = 0;
+    if (settingsIndex == 0) currentState = SETTINGS_CONTRAST;
+    else if (settingsIndex == 1) {
+      tempTypingString = wifi_ssid; // Load current SSID so it can be edited
+      charIndex = 0;
+      currentState = SETTINGS_WIFI_SSID;
+    }
+    else if (settingsIndex == 2) {
+      tempTypingString = wifi_pass; // Load current PASS so it can be edited
+      charIndex = 0;
+      currentState = SETTINGS_WIFI_PASS;
+    }
+    else if (settingsIndex == 3) currentState = MENU;
+  }
+
+  if (longPress) {
+    currentState = MENU;
+  }
+}
+
+void runSettingsContrast() {
   int delta = getEncoderDelta();
   
   if (delta != 0) {
@@ -402,30 +489,99 @@ void runSettings() {
     if (displayContrast < 0) displayContrast = 0;
     if (displayContrast > 100) displayContrast = 100;
     display.setContrast(displayContrast);
+    preferences.putInt("contrast", displayContrast); 
   }
 
   display.clearDisplay();
   display.setCursor(0, 0);
-  display.println("- SETTINGS -");
-  display.setCursor(0, 15);
-  display.println("Contrast:");
-  
-  display.setCursor(15, 25);
+  display.println("- CONTRAST -");
+  display.setCursor(15, 20);
   display.print("< ");
   display.print(displayContrast);
   display.println(" >");
-
   display.setCursor(0, 40);
-  display.println("(Hold to Exit)");
+  display.println("(Tap to Exit)");
   display.display();
 
   if (registeredTaps > 0 || longPress) {
-    currentState = MENU;
+    currentState = SETTINGS;
   }
 }
 
+// Master function for letter-by-letter typing used by both SSID and Password
+void runWifiInput(bool isSsid) {
+  int delta = getEncoderDelta();
+  int charsetLen = strlen(charset);
+
+  if (delta > 0) charIndex = (charIndex + 1) % charsetLen;
+  if (delta < 0) {
+    charIndex--;
+    if (charIndex < 0) charIndex = charsetLen - 1;
+  }
+
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  if (isSsid) display.println("Edit SSID:");
+  else display.println("Edit PASS:");
+
+  // Show the text being typed (scrolls right if too long)
+  if (tempTypingString.length() > 14) {
+    display.println(tempTypingString.substring(tempTypingString.length() - 14));
+  } else {
+    display.println(tempTypingString);
+  }
+
+  char selectedChar = charset[charIndex];
+  display.setCursor(0, 30);
+  display.print("Char: [ ");
+  display.print(selectedChar);
+  display.println(" ]");
+  
+  display.setCursor(0, 40);
+  display.print("<:Del  >:Save");
+  display.display();
+
+  if (registeredTaps == 1) {
+    if (selectedChar == '<') {
+      if (tempTypingString.length() > 0) {
+        tempTypingString.remove(tempTypingString.length() - 1); 
+      }
+    } else if (selectedChar == '>') {
+      // SAVE PRESSED
+      if (isSsid) {
+        wifi_ssid = tempTypingString;
+        preferences.putString("ssid", wifi_ssid);
+      } else {
+        wifi_pass = tempTypingString;
+        preferences.putString("pass", wifi_pass);
+      }
+      
+      display.clearDisplay();
+      display.setCursor(0, 10);
+      display.println("Saved!");
+      display.println("Reboot to");
+      display.println("apply.");
+      display.display();
+      delay(2000);
+      
+      tempTypingString = "";
+      currentState = SETTINGS;
+    } else if (selectedChar != '*') { // Skip asterisk for wifi
+      tempTypingString += selectedChar; 
+    }
+  }
+  
+  if (longPress) {
+    tempTypingString = ""; 
+    currentState = SETTINGS; 
+  }
+}
+
+void runSettingsWifiSsid() { runWifiInput(true); }
+void runSettingsWifiPass() { runWifiInput(false); }
+
 // ==========================================
-// LIVE API AUTOCOMPLETE FUNCTION
+// J.A.R.V.I.S. AUTOFILL FUNCTION
 // ==========================================
 void fetchPrediction(String input) {
   if (input.length() == 0) {
@@ -722,13 +878,76 @@ void runTimerAlarm() {
   }
 }
 
+void runMusic() {
+  int delta = getEncoderDelta();
+
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setCursor(12, 16); 
+  display.print("MUSIC");
+  display.setTextSize(1); 
+  display.display();
+
+  if (delta > 0) bleKeyboard.write(KEY_MEDIA_VOLUME_UP);
+  if (delta < 0) bleKeyboard.write(KEY_MEDIA_VOLUME_DOWN);
+  
+  if (registeredTaps == 1) bleKeyboard.write(KEY_MEDIA_PLAY_PAUSE);
+  if (registeredTaps == 2) bleKeyboard.write(KEY_MEDIA_PREVIOUS_TRACK);
+  if (registeredTaps == 3) bleKeyboard.write(KEY_MEDIA_NEXT_TRACK);
+  
+  if (longPress) {
+    currentState = MENU;
+  }
+}
+
+void runSocial() {
+  int delta = getEncoderDelta();
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(15, 0);
+  display.println("- SOCIAL -");
+  display.setCursor(0, 15);
+  display.println("Turn = Scroll");
+  display.println("Tap  = Pause");
+  display.println("(Hold to Exit)");
+  display.display();
+
+  if (delta > 0) bleKeyboard.write(KEY_DOWN_ARROW); 
+  if (delta < 0) bleKeyboard.write(KEY_UP_ARROW);   
+  
+  if (registeredTaps == 1) bleKeyboard.write(' ');
+  
+  if (longPress) {
+    currentState = MENU;
+  }
+}
+
+void runCamera() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(15, 0);
+  display.println("- CAMERA -");
+  display.setCursor(0, 20);
+  display.println("Tap to Snap!");
+  display.setCursor(0, 38);
+  display.println("(Hold to Exit)");
+  display.display();
+
+  if (registeredTaps > 0) {
+    bleKeyboard.write(KEY_MEDIA_VOLUME_UP);
+  }
+  
+  if (longPress) {
+    currentState = MENU;
+  }
+}
+
 void runScreensaver() {
   display.clearDisplay();
- // Draw the static emblem exactly in the center
   display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, WHITE, BLACK);
   display.display();
 
-  // Wake up immediately if the encoder is turned, clicked, or long pressed
   if (encoderCount != lastEncoderCount || registeredTaps > 0 || longPress) {
     lastActivityTime = millis();
     encoderCount = 0;
@@ -792,72 +1011,6 @@ void runOtaMode() {
   if (longPress) {
     server.stop();
     otaStarted = false;
-    currentState = MENU;
-  }
-}
-void runSocial() {
-  int delta = getEncoderDelta();
-
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setCursor(15, 0);
-  display.println("- SOCIAL -");
-  display.setCursor(0, 15);
-  display.println("Turn = Scroll");
-  display.println("Tap  = Pause");
-  display.println("(Hold to Exit)");
-  display.display();
-
-  // Scroll up/down using arrow keys
-  if (delta > 0) bleKeyboard.write(KEY_DOWN_ARROW); 
-  if (delta < 0) bleKeyboard.write(KEY_UP_ARROW);   
-  
-  // Tap to pause/play the video
-  if (registeredTaps == 1) bleKeyboard.write(' ');
-  
-  if (longPress) {
-    currentState = MENU;
-  }
-}
-
-void runCamera() {
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setCursor(15, 0);
-  display.println("- CAMERA -");
-  display.setCursor(0, 20);
-  display.println("Tap to Snap!");
-  display.setCursor(0, 38);
-  display.println("(Hold to Exit)");
-  display.display();
-
-  // Volume Up is the universal camera shutter button
-  if (registeredTaps > 0) {
-    bleKeyboard.write(KEY_MEDIA_VOLUME_UP);
-  }
-  
-  if (longPress) {
-    currentState = MENU;
-  }
-}
-void runMusic() {
-  int delta = getEncoderDelta();
-
-  display.clearDisplay();
-  display.setTextSize(2);
-  display.setCursor(12, 16); 
-  display.print("MUSIC");
-  display.setTextSize(1); 
-  display.display();
-
-  if (delta > 0) bleKeyboard.write(KEY_MEDIA_VOLUME_UP);
-  if (delta < 0) bleKeyboard.write(KEY_MEDIA_VOLUME_DOWN);
-  
-  if (registeredTaps == 1) bleKeyboard.write(KEY_MEDIA_PLAY_PAUSE);
-  if (registeredTaps == 2) bleKeyboard.write(KEY_MEDIA_PREVIOUS_TRACK);
-  if (registeredTaps == 3) bleKeyboard.write(KEY_MEDIA_NEXT_TRACK);
-  
-  if (longPress) {
     currentState = MENU;
   }
 }
