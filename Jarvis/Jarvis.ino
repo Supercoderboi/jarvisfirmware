@@ -8,7 +8,7 @@
 #include "DHT.h"
 #include <BleKeyboard.h>
 #include <time.h>
-#include <Preferences.h> // <-- NEW: Memory saving library
+#include <Preferences.h> 
 
 // Web OTA Headers
 #include <WebServer.h>
@@ -74,6 +74,15 @@ const uint8_t PROGMEM shield_bitmap[] = {
   0x61, 0xff, 0xff, 0xc1, 0x80, 0x01, 0x83, 0xff, 0xff, 0xf0, 0x78, 0x1e, 0x0f, 0xff, 0xff, 0xfc, 
   0x03, 0xc0, 0x3f, 0xff, 0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xf0, 0x0f, 0xff, 0xff
 };
+
+// ==========================================
+// CLEARANCE BOOT SEQUENCE VARIABLES
+// ==========================================
+String correctPIN = "XR2896"; 
+String enteredPIN = "";     
+int authCharIndex = 0;          
+const char authChars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const int numAuthChars = 36;
 
 // ==========================================
 // STATE MACHINE & UI VARIABLES
@@ -166,6 +175,105 @@ void IRAM_ATTR readEncoder() {
   }
 }
 
+// Function Declarations
+void handleButton();
+int getEncoderDelta();
+
+// ==========================================
+// BOOT SEQUENCE VERIFICATION
+// ==========================================
+void verifyClearanceLevel() {
+  display.clearDisplay();
+  display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, BLACK);
+  display.display();
+  delay(2000); 
+  
+  bool accessGranted = false;
+  enteredPIN = "";
+  authCharIndex = 0;
+  
+  // Reset encoder safely
+  encoderCount = 0;
+  lastEncoderCount = 0;
+  
+  while (!accessGranted) {
+    handleButton(); // Use existing button logic
+    int delta = getEncoderDelta(); // Use existing rotary logic
+    
+    if (delta > 0) { 
+      authCharIndex++;
+      if (authCharIndex >= numAuthChars) authCharIndex = 0;
+    } 
+    else if (delta < 0) { 
+      authCharIndex--;
+      if (authCharIndex < 0) authCharIndex = numAuthChars - 1;
+    }
+    
+    display.clearDisplay();
+    display.setTextSize(1);
+    
+    // Header
+    display.setCursor(12, 0);
+    display.print("S.H.I.E.L.D");
+    display.setCursor(0, 10);
+    display.print("LEVEL 8 ACCESS");
+    display.setCursor(0, 20);
+    display.print("VERIFY ACCESS:");
+    
+    // Draw the PIN slots (e.g., _ _ _ _) and entered characters
+    display.setCursor(0, 30);
+    for (int i = 0; i < correctPIN.length(); i++) {
+      if (i < enteredPIN.length()) {
+        display.print(enteredPIN[i]);
+      } else {
+        display.print("_");
+      }
+      display.print(" ");
+    }
+    
+    // Draw the Character Selector at the bottom
+    display.setCursor(24, 40);
+    display.print("[ ");
+    display.print(authChars[authCharIndex]);
+    display.print(" ]");
+    
+    display.display();
+
+    // If the user clicks the encoder to select the character
+    if (registeredTaps > 0) {
+      enteredPIN += authChars[authCharIndex];
+      registeredTaps = 0; // Consume the tap
+      
+      // Check if they have entered enough digits
+      if (enteredPIN.length() == correctPIN.length()) {
+        if (enteredPIN == correctPIN) {
+          // CORRECT PIN
+          display.clearDisplay();
+          display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, BLACK);
+          display.display();
+          delay(1000);
+          accessGranted = true; 
+        } else {
+          // WRONG PIN: INITIATE LOCKDOWN
+          while (true) {
+            display.clearDisplay();
+            display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, BLACK);
+            display.display();
+            delay(2000);
+            
+            display.clearDisplay();
+            display.setCursor(18, 20);
+            display.print("LOCKDOWN");
+            display.display();
+            delay(2000);
+          }
+        }
+      }
+    }
+    delay(30); // Prevent loop from running too fast
+  }
+}
+
 // ==========================================
 // SETUP
 // ==========================================
@@ -192,6 +300,10 @@ void setup() {
   display.setTextSize(1);
   display.setTextColor(BLACK);
 
+  // --- S.H.I.E.L.D. VERIFICATION BOOT SEQUENCE ---
+  verifyClearanceLevel();
+
+  // Hardware init post-clearance
   dht.begin();
   bleKeyboard.begin();
 
@@ -204,7 +316,6 @@ void setup() {
   WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
   
   int wifiAttempts = 0;
-  // Try to connect for 10 seconds. If it fails, boot into UI so you can edit the WiFi.
   while (WiFi.status() != WL_CONNECTED && wifiAttempts < 20) {
     delay(500);
     display.print(".");
@@ -246,7 +357,7 @@ void loop() {
     currentState = TIMER_ALARM;    
   }
 
-  // Screensaver check (Stay awake during SOCIAL and MUSIC menus)
+  // Screensaver check
   if (millis() - lastActivityTime > SCREENSAVER_TIMEOUT && 
       currentState != SCREENSAVER && 
       currentState != TIMER_ALARM &&
@@ -464,12 +575,12 @@ void runSettings() {
     lastEncoderCount = 0;
     if (settingsIndex == 0) currentState = SETTINGS_CONTRAST;
     else if (settingsIndex == 1) {
-      tempTypingString = wifi_ssid; // Load current SSID so it can be edited
+      tempTypingString = wifi_ssid; 
       charIndex = 0;
       currentState = SETTINGS_WIFI_SSID;
     }
     else if (settingsIndex == 2) {
-      tempTypingString = wifi_pass; // Load current PASS so it can be edited
+      tempTypingString = wifi_pass; 
       charIndex = 0;
       currentState = SETTINGS_WIFI_PASS;
     }
@@ -508,7 +619,6 @@ void runSettingsContrast() {
   }
 }
 
-// Master function for letter-by-letter typing used by both SSID and Password
 void runWifiInput(bool isSsid) {
   int delta = getEncoderDelta();
   int charsetLen = strlen(charset);
@@ -524,7 +634,6 @@ void runWifiInput(bool isSsid) {
   if (isSsid) display.println("Edit SSID:");
   else display.println("Edit PASS:");
 
-  // Show the text being typed (scrolls right if too long)
   if (tempTypingString.length() > 14) {
     display.println(tempTypingString.substring(tempTypingString.length() - 14));
   } else {
@@ -547,7 +656,6 @@ void runWifiInput(bool isSsid) {
         tempTypingString.remove(tempTypingString.length() - 1); 
       }
     } else if (selectedChar == '>') {
-      // SAVE PRESSED
       if (isSsid) {
         wifi_ssid = tempTypingString;
         preferences.putString("ssid", wifi_ssid);
@@ -566,7 +674,7 @@ void runWifiInput(bool isSsid) {
       
       tempTypingString = "";
       currentState = SETTINGS;
-    } else if (selectedChar != '*') { // Skip asterisk for wifi
+    } else if (selectedChar != '*') { 
       tempTypingString += selectedChar; 
     }
   }
