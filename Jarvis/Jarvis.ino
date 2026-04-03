@@ -129,7 +129,7 @@ String jarvisMessage = "";
 String predictedWord = "";
 String jarvisReply = "";
 int jarvisScrollY = 0; 
-String tempTypingString = ""; // Used for WiFi input
+String tempTypingString = ""; 
 
 // Timer Variables
 int timerHours = 0;
@@ -180,101 +180,6 @@ void handleButton();
 int getEncoderDelta();
 
 // ==========================================
-// BOOT SEQUENCE VERIFICATION
-// ==========================================
-void verifyClearanceLevel() {
-  display.clearDisplay();
-  display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, BLACK);
-  display.display();
-  delay(2000); 
-  
-  bool accessGranted = false;
-  enteredPIN = "";
-  authCharIndex = 0;
-  
-  // Reset encoder safely
-  encoderCount = 0;
-  lastEncoderCount = 0;
-  
-  while (!accessGranted) {
-    handleButton(); // Use existing button logic
-    int delta = getEncoderDelta(); // Use existing rotary logic
-    
-    if (delta > 0) { 
-      authCharIndex++;
-      if (authCharIndex >= numAuthChars) authCharIndex = 0;
-    } 
-    else if (delta < 0) { 
-      authCharIndex--;
-      if (authCharIndex < 0) authCharIndex = numAuthChars - 1;
-    }
-    
-    display.clearDisplay();
-    display.setTextSize(1);
-    
-    // Header
-    display.setCursor(12, 0);
-    display.print("S.H.I.E.L.D");
-    display.setCursor(0, 10);
-    display.print("LEVEL 8 ACCESS");
-    display.setCursor(0, 20);
-    display.print("VERIFY ACCESS:");
-    
-    // Draw the PIN slots (e.g., _ _ _ _) and entered characters
-    display.setCursor(0, 30);
-    for (int i = 0; i < correctPIN.length(); i++) {
-      if (i < enteredPIN.length()) {
-        display.print(enteredPIN[i]);
-      } else {
-        display.print("_");
-      }
-      display.print(" ");
-    }
-    
-    // Draw the Character Selector at the bottom
-    display.setCursor(24, 40);
-    display.print("[ ");
-    display.print(authChars[authCharIndex]);
-    display.print(" ]");
-    
-    display.display();
-
-    // If the user clicks the encoder to select the character
-    if (registeredTaps > 0) {
-      enteredPIN += authChars[authCharIndex];
-      registeredTaps = 0; // Consume the tap
-      
-      // Check if they have entered enough digits
-      if (enteredPIN.length() == correctPIN.length()) {
-        if (enteredPIN == correctPIN) {
-          // CORRECT PIN
-          display.clearDisplay();
-          display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, BLACK);
-          display.display();
-          delay(1000);
-          accessGranted = true; 
-        } else {
-          // WRONG PIN: INITIATE LOCKDOWN
-          while (true) {
-            display.clearDisplay();
-            display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, BLACK);
-            display.display();
-            delay(2000);
-            
-            display.clearDisplay();
-            display.setCursor(18, 20);
-            display.print("LOCKDOWN");
-            display.display();
-            delay(2000);
-          }
-        }
-      }
-    }
-    delay(30); // Prevent loop from running too fast
-  }
-}
-
-// ==========================================
 // SETUP
 // ==========================================
 void setup() {
@@ -300,50 +205,126 @@ void setup() {
   display.setTextSize(1);
   display.setTextColor(BLACK);
 
-  // --- S.H.I.E.L.D. VERIFICATION BOOT SEQUENCE ---
-  verifyClearanceLevel();
-
-  // Hardware init post-clearance
-  dht.begin();
-  bleKeyboard.begin();
-
-  display.setCursor(0, 0);
-  display.println("Booting...");
-  display.println("Connecting:");
-  display.println(wifi_ssid);
+  // --- 1. SHOW BOOT LOGO IMMEDIATELY ---
+  // Using WHITE for background and BLACK for foreground fixes the inversion
+  display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, WHITE, BLACK);
   display.display();
-  
+
+  // --- 2. CONNECT TO WIFI SILENTLY ---
   WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
-  
   int wifiAttempts = 0;
   while (WiFi.status() != WL_CONNECTED && wifiAttempts < 20) {
     delay(500);
-    display.print(".");
-    display.display();
     wifiAttempts++;
   }
 
-  display.clearDisplay();
+  // --- 3. SYNC TIME SILENTLY ---
   if (WiFi.status() == WL_CONNECTED) {
-    display.println("Syncing Time...");
-    display.display();
     configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, "pool.ntp.org");
-    
     struct tm timeinfo;
     int ntpAttempts = 0;
     while (!getLocalTime(&timeinfo) && ntpAttempts < 10) {
       delay(500);
       ntpAttempts++;
     }
-  } else {
-    display.println("WiFi Failed!");
-    display.println("Go to Settings");
-    display.display();
-    delay(2000);
   }
+
+  // --- 4. INIT HARDWARE ---
+  dht.begin();
+  bleKeyboard.begin();
+
+  // --- 5. TRIGGER VERIFICATION SCREEN ---
+  verifyClearanceLevel();
 
   encoderCount = 0; 
   lastActivityTime = millis();
+}
+
+// ==========================================
+// BOOT SEQUENCE VERIFICATION
+// ==========================================
+void verifyClearanceLevel() {
+  bool accessGranted = false;
+  enteredPIN = "";
+  authCharIndex = 0;
+  
+  encoderCount = 0;
+  lastEncoderCount = 0;
+  
+  while (!accessGranted) {
+    handleButton(); 
+    int delta = getEncoderDelta(); 
+    
+    if (delta > 0) { 
+      authCharIndex++;
+      if (authCharIndex >= numAuthChars) authCharIndex = 0;
+    } 
+    else if (delta < 0) { 
+      authCharIndex--;
+      if (authCharIndex < 0) authCharIndex = numAuthChars - 1;
+    }
+    
+    display.clearDisplay();
+    display.setTextSize(1);
+    
+    // Header
+    display.setCursor(12, 0);
+    display.print("S.H.I.E.L.D");
+    display.setCursor(0, 10);
+    display.print("LEVEL 8 ACCESS");
+    display.setCursor(0, 20);
+    display.print("VERIFY ACCESS:");
+    
+    // Draw the PIN slots
+    display.setCursor(0, 30);
+    for (int i = 0; i < correctPIN.length(); i++) {
+      if (i < enteredPIN.length()) {
+        display.print(enteredPIN[i]);
+      } else {
+        display.print("_");
+      }
+      display.print(" ");
+    }
+    
+    // Draw the Character Selector
+    display.setCursor(24, 40);
+    display.print("[ ");
+    display.print(authChars[authCharIndex]);
+    display.print(" ]");
+    
+    display.display();
+
+    if (registeredTaps > 0) {
+      enteredPIN += authChars[authCharIndex];
+      registeredTaps = 0; 
+      
+      if (enteredPIN.length() == correctPIN.length()) {
+        if (enteredPIN == correctPIN) {
+          // CORRECT PIN
+          display.clearDisplay();
+          display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, WHITE, BLACK);
+          display.display();
+          delay(1500);
+          accessGranted = true; 
+        } else {
+          // WRONG PIN: LOCKDOWN
+          while (true) {
+            display.clearDisplay();
+            display.drawBitmap(18, 0, shield_bitmap, shield_width, shield_height, WHITE, BLACK);
+            display.display();
+            delay(2000);
+            
+            display.clearDisplay();
+            display.setCursor(18, 20);
+            display.print("LOCKDOWN");
+            display.display();
+            delay(2000);
+          }
+        }
+      }
+    }
+    delay(30); 
+  }
 }
 
 // ==========================================
@@ -539,9 +520,6 @@ void runMenu() {
   }
 }
 
-// ==========================================
-// SETTINGS MENU & WIFI INPUT
-// ==========================================
 void runSettings() {
   int delta = getEncoderDelta();
   if (delta > 0) settingsIndex = (settingsIndex + 1) % numSettingsItems;
@@ -688,9 +666,6 @@ void runWifiInput(bool isSsid) {
 void runSettingsWifiSsid() { runWifiInput(true); }
 void runSettingsWifiPass() { runWifiInput(false); }
 
-// ==========================================
-// J.A.R.V.I.S. AUTOFILL FUNCTION
-// ==========================================
 void fetchPrediction(String input) {
   if (input.length() == 0) {
     predictedWord = "";
